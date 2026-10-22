@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Only the home variant may react to the Home key and keep Back on the dashboard. -->
+    <bool name="is_home_variant">true</bool>
+</resources>

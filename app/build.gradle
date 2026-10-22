@@ -1,0 +1,37 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'de.hamid.lumatv'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'de.hamid.lumatv'
+        minSdk 28
+        targetSdk 34
+        versionCode 3
+        versionName '0.3.0-stage'
+    }
+    flavorDimensions 'entry'
+    productFlavors {
+        preview {
+            dimension 'entry'
+            applicationIdSuffix '.preview'
+            manifestPlaceholders = [appLabel: 'Luma TV Vorschau']
+        }
+        home {
+            dimension 'entry'
+            manifestPlaceholders = [appLabel: 'Luma TV']
+        }
+    }
+    buildTypes {
+        release { minifyEnabled false }
+    }
+    androidResources {
+        // Variable fonts are opened directly from assets.
+        noCompress 'ttf'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+// Deliberately no runtime libraries. Android framework only.

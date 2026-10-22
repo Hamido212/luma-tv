@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="luma_ink">#FF12131F</color>
+    <color name="luma_ivory">#FFEDE6D3</color>
+    <color name="luma_mist">#FFA9A6BC</color>
+    <color name="luma_panel">#FF1C1D33</color>
+
+    <bool name="is_home_variant">false</bool>
+
+    <style name="LumaTheme" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/luma_ink</item>
+        <item name="android:colorBackground">@color/luma_ink</item>
+        <item name="android:colorAccent">@color/luma_ivory</item>
+        <item name="android:alertDialogTheme">@style/LumaDialog</item>
+    </style>
+
+    <!-- Stage: plain black window so nothing flashes before the photo is drawn. -->
+    <style name="LumaStage" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:colorBackground">@android:color/black</item>
+        <item name="android:windowDisablePreview">false</item>
+    </style>
+
+    <style name="LumaDialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorBackground">@color/luma_panel</item>
+        <item name="android:colorAccent">@color/luma_ivory</item>
+        <item name="android:textColorPrimary">@color/luma_ivory</item>
+        <item name="android:textColorSecondary">@color/luma_mist</item>
+        <item name="android:colorControlHighlight">#40EDE6D3</item>
+    </style>
+</resources>
