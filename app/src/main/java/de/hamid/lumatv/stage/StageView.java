@@ -34,11 +34,13 @@ public final class StageView extends View {
         void leave();
         void catalogChanged();
         void toast(String text);
+        /** Opens a text box for the name in the greeting. */
+        void editName();
     }
 
     static final int S_HOME = 0, S_ALL = 1, S_SETTINGS = 2, S_BACKGROUND = 3, S_WALLPAPER = 4,
             S_ROTATION = 5, S_LAYOUT = 6, S_TYPE = 7, S_FOCUS = 8, S_EDITOR = 9, S_TV = 10,
-            S_INPUTS = 11, S_PS4 = 12, S_CLOCK = 13;
+            S_INPUTS = 11, S_PS4 = 12, S_CLOCK = 13, S_GREETING = 14;
     static final int ED_HEAD = 0, ED_LEFT = 1, ED_REMOVE = 2, ED_RIGHT = 3;
     private static final int GROUPS = 6;
     private static final long WALL_DELAY = 200;
@@ -63,6 +65,7 @@ public final class StageView extends View {
     private int listFirst;
     private final Anim dockOff = new Anim(0), plate = new Anim(0), listOff = new Anim(0), lens = new Anim(0);
     private String clock = "";
+    private String greeting = "";
 
     // Scenes
     private Scene scene;
@@ -131,6 +134,18 @@ public final class StageView extends View {
         if (text.equals(clock)) return;
         clock = text;
         invalidate();
+    }
+
+    /** Greeting under the clock; an empty text hides it. */
+    public void setGreeting(String text) {
+        if (text.equals(greeting)) return;
+        greeting = text;
+        invalidate();
+    }
+
+    /** Called after the name was changed, so an open settings page shows the new value. */
+    public void nameChanged() {
+        refreshPage();
     }
 
     /** All launchable apps (alphabetical) plus the PS4 input, from the activity's worker. */
@@ -202,7 +217,7 @@ public final class StageView extends View {
 
     private static boolean isPage(int screen) {
         return screen == S_BACKGROUND || screen == S_ROTATION || screen == S_LAYOUT || screen == S_TYPE
-                || screen == S_FOCUS || screen == S_TV || screen == S_INPUTS || screen == S_PS4 || screen == S_CLOCK;
+                || screen == S_FOCUS || screen == S_TV || screen == S_INPUTS || screen == S_PS4 || screen == S_CLOCK || screen == S_GREETING;
     }
 
     private long dur(long ms) { return look.motion ? ms : 0; }
@@ -369,6 +384,7 @@ public final class StageView extends View {
         f.plate = plate.value(now);
         f.lens = lens.value(now);
         f.clock = clock;
+        f.greeting = greeting;
         f.utilLabels = new String[]{s(R.string.st_all_apps), s(R.string.st_settings)};
         f.emptyText = s(R.string.st_home_empty);
         return f;
@@ -589,8 +605,9 @@ public final class StageView extends View {
             case S_TV: {
                 p = new Page(screen, s(R.string.st_settings), s(R.string.st_group_tv), false);
                 p.width = 1056;
-                p.top = 244;
-                p.descHeight = 108;
+                p.top = 212;
+                p.descHeight = 96;
+                p.sectionGap = 24;
                 Page.Section tv = p.section(s(R.string.st_tv_section), false);
                 Page.Opt settings = tv.add(new Page.Opt(s(R.string.st_tv_settings), host::openTvSettings));
                 settings.description = s(R.string.st_tv_settings_desc);
@@ -609,6 +626,10 @@ public final class StageView extends View {
                 Page.Opt clockOpt = luma.add(new Page.Opt(s(R.string.st_clock), () -> push(S_CLOCK)));
                 clockOpt.description = clockName(look.clockMode());
                 clockOpt.forward = true;
+                Page.Opt greetOpt = luma.add(new Page.Opt(s(R.string.st_greeting), () -> push(S_GREETING)));
+                greetOpt.description = !look.greetingOn() ? s(R.string.st_greeting_off)
+                        : look.userName().isEmpty() ? s(R.string.st_name_none) : look.userName();
+                greetOpt.forward = true;
                 p.footnote = s(R.string.st_credits);
                 p.hint = s(R.string.st_hint_select);
                 break;
@@ -661,6 +682,28 @@ public final class StageView extends View {
                     }));
                     o.checked = look.clockMode() == i;
                 }
+                p.hint = s(R.string.st_hint_apply);
+                break;
+            }
+            case S_GREETING: {
+                p = new Page(screen, s(R.string.st_group_tv), s(R.string.st_greeting), false);
+                p.width = 1056;
+                p.top = 260;
+                p.rowHeight = 88;
+                Page.Section sec = p.section(null, false);
+                Page.Opt on = sec.add(new Page.Opt(s(R.string.st_greeting_on), () -> {
+                    if (look.setGreetingOn(true)) { host.catalogChanged(); refreshPage(); }
+                    else host.toast(s(R.string.st_save_failed));
+                }));
+                on.checked = look.greetingOn();
+                Page.Opt off = sec.add(new Page.Opt(s(R.string.st_greeting_off), () -> {
+                    if (look.setGreetingOn(false)) { host.catalogChanged(); refreshPage(); }
+                    else host.toast(s(R.string.st_save_failed));
+                }));
+                off.checked = !look.greetingOn();
+                Page.Section nm = p.section(s(R.string.st_name_section), false);
+                Page.Opt name = nm.add(new Page.Opt(s(R.string.st_name_edit), host::editName));
+                name.description = look.userName().isEmpty() ? s(R.string.st_name_none) : look.userName();
                 p.hint = s(R.string.st_hint_apply);
                 break;
             }

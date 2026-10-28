@@ -76,7 +76,7 @@
     <string name="st_focus">Fokus</string>
     <string name="st_group_apps">Apps auf Home</string>
     <string name="st_group_tv">TV &amp; Luma</string>
-    <string name="st_tv_value">TV-Einstellungen, Eingänge, PS4, Uhr</string>
+    <string name="st_tv_value">TV-Einstellungen, Eingänge, PS4, Uhr, Begrüßung</string>
     <string name="st_hint_open">Ausgewählte Gruppe öffnen</string>
     <string name="st_hint_apply">Auswahl übernehmen</string>
     <string name="st_hint_photo">Ausgewähltes Foto übernehmen</string>
@@ -162,6 +162,14 @@
     <string name="wp_amber">Bernsteinhügel</string>
     <string name="wp_mint">Mintwelle</string>
     <string name="wp_alpine">Alpenglühen</string>
+    <string name="st_greeting">Begrüßung</string>
+    <string name="st_greeting_on">Begrüßung anzeigen</string>
+    <string name="st_greeting_off">Aus</string>
+    <string name="st_name_section">Name</string>
+    <string name="st_name_edit">Name ändern…</string>
+    <string name="st_name_none">Kein Name eingestellt</string>
+    <string name="st_name_title">Dein Name</string>
+    <string name="st_name_hint">Name</string>
     <plurals name="st_apps_count">
         <item quantity="one">%d App</item>
         <item quantity="other">%d Apps</item>

@@ -77,7 +77,7 @@
     <string name="st_focus">Focus</string>
     <string name="st_group_apps">Apps on Home</string>
     <string name="st_group_tv">TV &amp; Luma</string>
-    <string name="st_tv_value">TV settings, inputs, PS4, clock</string>
+    <string name="st_tv_value">TV settings, inputs, PS4, clock, greeting</string>
     <string name="st_hint_open">Open selected group</string>
     <string name="st_hint_apply">Apply selected setting</string>
     <string name="st_hint_photo">Apply selected photo</string>
@@ -163,6 +163,14 @@
     <string name="wp_amber">Amber hills</string>
     <string name="wp_mint">Mint wave</string>
     <string name="wp_alpine">Alpine glow</string>
+    <string name="st_greeting">Greeting</string>
+    <string name="st_greeting_on">Show greeting</string>
+    <string name="st_greeting_off">Off</string>
+    <string name="st_name_section">Name</string>
+    <string name="st_name_edit">Change name…</string>
+    <string name="st_name_none">No name set</string>
+    <string name="st_name_title">Your name</string>
+    <string name="st_name_hint">Name</string>
     <plurals name="st_apps_count">
         <item quantity="one">%d app</item>
         <item quantity="other">%d apps</item>

@@ -13,9 +13,11 @@ Gestaltung und Bedienung folgen [CleanFrame](https://github.com/nthnclrk/CleanFr
 - **Dock oder Liste.** Das Dock zeigt bis zu neun Apps unter Glas, die Liste große App-Namen. Apps und Steuerung jeweils als Text, Icons oder beides.
 - **Echtes Glas.** Das Dock zeigt den unscharfen Teil des Fotos, der darunter liegt. Wählbar sind Weich, Frost oder Klar. Die Glasflächen werden einmal pro Foto im Hintergrund berechnet, beim Navigieren wird nichts neu weichgezeichnet.
 - **18 Hintergründe:** 15 Fotos (Unsplash) und drei eigene japanisch inspirierte Vektorbilder. Alternativ ein heller oder dunkler Hintergrund. Das Foto kann automatisch wechseln.
-- **Einstellungen auf dem Fernseher, mit Live-Vorschau:** Hintergrund, Layout, Schrift (Manrope, Geist, Newsreader), Fokus (Glas oder Schrift), Bewegung, Apps auf Home, TV-Einstellungen, HDMI-Eingänge, Uhrformat. Nur OK übernimmt eine Einstellung, der Fokus allein ändert nichts.
+- **Einstellungen auf dem Fernseher, mit Live-Vorschau:** Hintergrund, Layout, Schrift (Manrope, Geist, Newsreader), Fokus (Glas oder Schrift), Bewegung, Apps auf Home, TV-Einstellungen, HDMI-Eingänge, Uhrformat, Begrüßung. Nur OK übernimmt eine Einstellung, der Fokus allein ändert nichts.
 - **Alle Apps** als Raster. OK öffnet eine App, OK gedrückt halten nimmt sie auf Home oder entfernt sie.
 - **Apps auf Home:** Editor mit zwei Spalten zum Sortieren, Hinzufügen und Entfernen.
+- **Begrüßung (optional):** „Guten Abend, Hamid“ unter der Uhr, mit eigenem Namen. Standardmäßig aus, einschalten unter Einstellungen › TV & Luma › Begrüßung.
+- **Deutsch, Englisch und Russisch**, je nach Systemsprache des Fernsehers.
 - **Spielkonsole per HDMI:** Ein Eingang lässt sich als PlayStation zuordnen und erscheint dann im Dock.
 - **Klassische Ansicht:** der frühere Kategorien-Startbildschirm im Holzschnitt-Stil ([Details](docs/design-klassisch.md)).
 - **Datensparsam:** Kein Internetzugriff, keine Konten, keine Analyse. Einzige Berechtigung ist `ACCESS_NETWORK_STATE`. Alles bleibt lokal auf dem Fernseher.
@@ -76,6 +78,8 @@ JDK 17, Android SDK Platform 34. Gradle 8.9 und AGP 8.7.3 sind fest eingestellt.
 ./gradlew :app:assembleHomeDebug :app:assemblePreviewDebug
 ```
 
+GitHub Actions baut beide Varianten bei jedem Push auf `main` und bei jedem Pull Request. Die APKs liegen danach als Artefakt `luma-tv-debug-apks` am jeweiligen Lauf.
+
 | Variante | Paket | Zweck |
 |---|---|---|
 | `home` | `de.hamid.lumatv` | Startbildschirm mit Home-Filter |
@@ -109,7 +113,7 @@ Andere Geräte sind nicht getestet.
 
 ## Credits und Lizenzen
 
-- Code: MIT, siehe [LICENSE](LICENSE). Enthält Teile von TV Detox (MIT, Ansub Khan). Design und Verhalten nach CleanFrame (MIT, Nathan Clark).
+- Code: MIT, siehe [LICENSE](LICENSE). Enthält Teile von TV Detox (MIT, Ansub Khan). Design und Verhalten nach CleanFrame (MIT, Nathan Clark). Begrüßung, russische Übersetzung und Build-Workflow aus dem Fork [Horizon Home](https://github.com/danilll0001/luma-tv) (MIT, danilll0001).
 - Fotos: Unsplash-Lizenz. Fotografen und Links stehen in [NOTICE.md](NOTICE.md).
 - Schriften: Manrope, Geist, Newsreader, Shippori Mincho (SIL OFL 1.1).
 - Marken-Icons: Simple Icons (CC0), Disney+ aus Custom Brand Icons (MIT). Die Marken gehören ihren Inhabern und kennzeichnen nur die jeweils installierte App. Dieses Projekt steht in keiner Verbindung zu den Anbietern, zu TCL, Google oder Samsung.
@@ -123,6 +127,7 @@ Luma TV is a home screen (launcher) for Android TV / Google TV, built natively i
 - a glass dock or a big-type list;
 - 15 Unsplash photos plus three original vector wallpapers;
 - live-preview settings, an All apps grid and a two-column Home editor;
+- an optional greeting with your name under the clock (off by default);
 - HDMI console shortcuts.
 
-It needs no internet permission and stores everything locally. Install the APK from Releases with `adb`. On Google TV devices the stock launcher may keep the Home key; see the note above, including how to revert. Tested on a TCL Smart TV Pro (Android TV 14). The UI is German and English.
+It needs no internet permission and stores everything locally. Install the APK from Releases with `adb`. On Google TV devices the stock launcher may keep the Home key; see the note above, including how to revert. Tested on a TCL Smart TV Pro (Android TV 14). The UI is German, English and Russian.

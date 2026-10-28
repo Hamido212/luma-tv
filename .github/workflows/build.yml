@@ -1,0 +1,26 @@
+# Baut beide APK-Varianten (Debug) bei jedem Push auf main und bei jedem Pull Request.
+# Übernommen aus dem Fork Horizon Home von danilll0001 (MIT), auf main und Pull Requests beschränkt.
+name: Build APK
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x gradlew
+      - run: ./gradlew :app:assembleHomeDebug :app:assemblePreviewDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: luma-tv-debug-apks
+          path: app/build/outputs/apk/**/*.apk
