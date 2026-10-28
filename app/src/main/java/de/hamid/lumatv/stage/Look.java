@@ -37,6 +37,8 @@ final class Look {
     private static final String KEY_PS4 = "ps4_input_id_v1";
     private static final String KEY_CLOCK = "clock_mode_v1";
     private static final String KEY_HOME = "stage_home_v1";
+    private static final String KEY_NAME = "stage_user_name_v1";
+    private static final String KEY_GREETING = "stage_greeting_v1";
     private static final String P = "stage_look_";
 
     private static final List<String> DEFAULT_HOME = Arrays.asList(
@@ -142,6 +144,21 @@ final class Look {
     }
 
     boolean setClockMode(int mode) { return prefs.edit().putInt(KEY_CLOCK, mode).commit(); }
+
+    // ------------------------------------------------------------------ greeting
+    // Greeting with an optional name, contributed by danilll0001 (Horizon Home fork, MIT).
+
+    /** Name shown in the greeting. Empty means the greeting is shown without a name. */
+    String userName() { return prefs.getString(KEY_NAME, ""); }
+
+    boolean setUserName(String name) {
+        return prefs.edit().putString(KEY_NAME, name == null ? "" : name).commit();
+    }
+
+    /** The greeting under the clock is off by default, so Home stays as calm as before. */
+    boolean greetingOn() { return prefs.getBoolean(KEY_GREETING, false); }
+
+    boolean setGreetingOn(boolean on) { return prefs.edit().putBoolean(KEY_GREETING, on).commit(); }
 
     static List<String> unmodifiable(List<String> list) { return Collections.unmodifiableList(list); }
 }

@@ -1,6 +1,7 @@
 package de.hamid.lumatv.stage;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -14,7 +15,10 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.provider.Settings;
+import android.text.InputFilter;
+import android.text.InputType;
 import android.text.format.DateFormat;
+import android.widget.EditText;
 import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -132,7 +136,18 @@ public final class StageActivity extends Activity implements StageView.Host {
         int mode = look.clockMode();
         boolean h24 = mode == 1 || (mode == 0 && DateFormat.is24HourFormat(this));
         // CleanFrame shows hours and minutes only, without AM/PM or seconds.
-        stage.setClock(DateFormat.format(h24 ? "H:mm" : "h:mm", Calendar.getInstance()).toString());
+        Calendar now = Calendar.getInstance();
+        stage.setClock(DateFormat.format(h24 ? "H:mm" : "h:mm", now).toString());
+        stage.setGreeting(greetingText(now.get(Calendar.HOUR_OF_DAY)));
+    }
+
+    /** "Good evening, Name" by time of day; empty when the greeting is switched off. */
+    private String greetingText(int hour) {
+        if (!look.greetingOn()) return "";
+        int res = hour < 5 ? R.string.greeting_night : hour < 11 ? R.string.greeting_morning
+                : hour < 17 ? R.string.greeting_day : hour < 22 ? R.string.greeting_evening : R.string.greeting_night;
+        String name = look.userName().trim();
+        return name.isEmpty() ? getString(res) : getString(res) + ", " + name;
     }
 
     private void refreshInputs() {
@@ -225,6 +240,31 @@ public final class StageActivity extends Activity implements StageView.Host {
     @Override public void catalogChanged() {
         updateClock();
         loadCatalog();
+    }
+
+    @Override public void editName() {
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(24)});
+        input.setText(look.userName());
+        input.setSelection(input.getText().length());
+        input.setHint(R.string.st_name_hint);
+        new AlertDialog.Builder(this, R.style.LumaDialog)
+                .setTitle(R.string.st_name_title)
+                .setView(input)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    String name = input.getText().toString().trim();
+                    if (look.setUserName(name)) {
+                        updateClock();
+                        stage.nameChanged();
+                    } else {
+                        toast(getString(R.string.st_save_failed));
+                    }
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .setOnDismissListener(dialog -> stage.requestFocus())
+                .show();
     }
 
     @Override public void toast(String text) {

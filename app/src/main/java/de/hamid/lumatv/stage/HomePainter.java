@@ -39,6 +39,8 @@ final class HomePainter {
         /** Animated util lens position (fractional while moving). */
         float lens;
         String clock;
+        /** Greeting under the clock; empty when switched off. */
+        String greeting;
         String[] utilLabels;
         String emptyText;
     }
@@ -508,6 +510,24 @@ final class HomePainter {
             p.setTextAlign(Paint.Align.LEFT);
         }
         p.clearShadowLayer();
+
+        // Optional greeting: a smaller line under the clock, same ink and shadow as the clock.
+        if (f.greeting != null && !f.greeting.isEmpty()) {
+            TextPaint gp = homeText(f, Type.PRIMARY, 30, 0f, Color2.fade(ink, .86f));
+            if (photo) {
+                if (region != null && region.pol == Walls.POL_DARK) g.shadow(2, 1, Color2.rgba(255, 248, 236, .24f));
+                else g.shadow(3, 1, Color2.rgba(0, 0, 0, .22f));
+            }
+            String line = g.ellipsize(f.greeting, 900);
+            if (f.look.dock()) {
+                c.drawText(line, 142, g.baseline(gp, 132, 40), gp);
+            } else {
+                gp.setTextAlign(Paint.Align.RIGHT);
+                c.drawText(line, 1780, g.baseline(gp, 172, 40), gp);
+                gp.setTextAlign(Paint.Align.LEFT);
+            }
+            gp.clearShadowLayer();
+        }
     }
 
     private void drawUtils(Canvas c, Frame f) {

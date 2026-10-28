@@ -44,4 +44,14 @@ Eigene Ergänzungen: getrennte Android-Varianten, Kategorien-Dashboard, Fokusste
 
 App-Banner und -Symbole auf den Kacheln stammen zur Laufzeit von den jeweils installierten Apps selbst. Sie sind nicht Teil dieses Projekts, und es wird keine Verbindung zu diesen Anbietern behauptet.
 
+## Ab Version 0.4: Beiträge aus Horizon Home
+
+**Horizon Home:** Copyright (c) 2026 danilll0001, MIT (https://github.com/danilll0001/luma-tv, ein Fork von Luma TV, Stand Commit `b2fe605` vom 25.10.2026). Übernommen wurden:
+
+- die Begrüßung unter der Uhr mit einstellbarem Namen (`Look`, `StageActivity`, `StageView`, `HomePainter`, Texte `st_greeting*` und `st_name*`). Abweichend vom Fork ist sie in Luma standardmäßig ausgeschaltet;
+- die russische Oberfläche (`app/src/main/res/values-ru/strings.xml`), mit „Luma“ statt „Horizon Home“;
+- der Build-Workflow für GitHub Actions (`.github/workflows/build.yml`), beschränkt auf `main` und Pull Requests.
+
+Nicht übernommen wurden Name, Logo, Banner und Paketname von Horizon Home sowie der „Eingänge“-Knopf auf Home.
+
 Gradle Wrapper 8.9: aus der lokal vorhandenen offiziellen Gradle-Distribution erzeugt, Apache License 2.0, siehe `third-party/GRADLE-LICENSE.txt`. Gradle ist ein Build-Werkzeug und keine Laufzeitabhängigkeit der TV-App.
