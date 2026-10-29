@@ -7,8 +7,8 @@ android {
         applicationId 'de.hamid.lumatv'
         minSdk 28
         targetSdk 34
-        versionCode 3
-        versionName '0.3.0-stage'
+        versionCode 4
+        versionName '0.4.0'
     }
     flavorDimensions 'entry'
     productFlavors {
@@ -22,8 +22,25 @@ android {
             manifestPlaceholders = [appLabel: 'Luma TV']
         }
     }
+    signingConfigs {
+        // Optional release key from the environment (or ~/.gradle/gradle.properties), never from the
+        // repository. Luma 0.3.0 was published signed with the maintainer's local debug key, so
+        // without a configured key release builds use that debug key and install over 0.3.0.
+        release {
+            def store = System.getenv('LUMA_STORE_FILE') ?: findProperty('luma.storeFile')
+            if (store) {
+                storeFile file(store)
+                storePassword System.getenv('LUMA_STORE_PASSWORD') ?: findProperty('luma.storePassword')
+                keyAlias System.getenv('LUMA_KEY_ALIAS') ?: findProperty('luma.keyAlias')
+                keyPassword System.getenv('LUMA_KEY_PASSWORD') ?: findProperty('luma.keyPassword')
+            }
+        }
+    }
     buildTypes {
-        release { minifyEnabled false }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release.storeFile != null ? signingConfigs.release : signingConfigs.debug
+        }
     }
     androidResources {
         // Variable fonts are opened directly from assets.
@@ -33,5 +50,26 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    testOptions {
+        unitTests {
+            // Resources and assets (fonts, photos) for Robolectric, including the screenshots.
+            includeAndroidResources = true
+            all {
+                systemProperty 'luma.screenshots', layout.buildDirectory.dir('screenshots').get().asFile.absolutePath
+                maxHeapSize = '2g'
+                testLogging { events 'failed'; exceptionFormat 'full' }
+            }
+        }
+    }
+    lint {
+        // Reported in CI, not yet blocking: the existing code has no baseline.
+        abortOnError false
+        checkReleaseBuilds false
+    }
 }
-// Deliberately no runtime libraries. Android framework only.
+
+// Deliberately no runtime libraries. Android framework only. Test-only dependencies below.
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+}

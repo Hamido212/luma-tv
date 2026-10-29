@@ -39,6 +39,11 @@ final class Look {
     private static final String KEY_HOME = "stage_home_v1";
     private static final String KEY_NAME = "stage_user_name_v1";
     private static final String KEY_GREETING = "stage_greeting_v1";
+    /** True while Home still holds the automatic first-run selection (never edited). */
+    private static final String KEY_HOME_AUTO = "stage_home_auto_v1";
+    /** Version of the stored settings; see {@link #migrate()}. */
+    static final String KEY_SCHEMA = "prefs_schema";
+    static final int SCHEMA = 1;
     private static final String P = "stage_look_";
 
     private static final List<String> DEFAULT_HOME = Arrays.asList(
@@ -47,10 +52,15 @@ final class Look {
 
     String bg, layout, apps, controls, focus, material, font, wallpaper, rotation;
     boolean motion;
+    /** Crash-loop safe mode: no photo and no glass until restart or a new background choice. */
+    private boolean safe;
     private final SharedPreferences prefs;
 
-    Look(SharedPreferences prefs) {
+    Look(SharedPreferences prefs) { this(prefs, false); }
+
+    Look(SharedPreferences prefs, boolean safe) {
         this.prefs = prefs;
+        this.safe = safe;
         bg = pick("bg", BGS, BG_PHOTO);
         layout = pick("layout", LAYOUTS, LAYOUT_DOCK);
         apps = pick("apps", SHOWS, SHOW_BOTH);
@@ -72,6 +82,10 @@ final class Look {
     boolean set(String key, String value) {
         boolean ok = prefs.edit().putString(P + key, value).commit();
         if (!ok) return false;
+        if (safe && "bg".equals(key)) {
+            safe = false;
+            SafeStart.leave(prefs);
+        }
         switch (key) {
             case "bg": bg = value; break;
             case "layout": layout = value; break;
@@ -95,10 +109,28 @@ final class Look {
 
     /** Material applies to a photographic Dock, or Glass focus on a photographic List. */
     boolean materialApplies() {
-        return BG_PHOTO.equals(bg) && (LAYOUT_DOCK.equals(layout) || FOCUS_GLASS.equals(focus));
+        return photo() && (LAYOUT_DOCK.equals(layout) || FOCUS_GLASS.equals(focus));
     }
 
-    boolean photo() { return BG_PHOTO.equals(bg); }
+    boolean photo() { return BG_PHOTO.equals(bg) && !safe; }
+
+    boolean safeMode() { return safe; }
+
+    /**
+     * Upgrades stored settings once per schema. Keys are never renamed. Schema 1 (Luma 0.4)
+     * writes the first-run Home selection down, so a later change of the built-in default can
+     * never rearrange the Home of someone who simply never edited it.
+     */
+    void migrate() {
+        int from = prefs.getInt(KEY_SCHEMA, 0);
+        if (from >= SCHEMA) return;
+        SharedPreferences.Editor edit = prefs.edit();
+        if (from < 1 && !prefs.contains(KEY_HOME)) {
+            edit.putString(KEY_HOME, new JSONArray(homeKeys()).toString());
+            edit.putBoolean(KEY_HOME_AUTO, true);
+        }
+        edit.putInt(KEY_SCHEMA, SCHEMA).commit();
+    }
     boolean dock() { return LAYOUT_DOCK.equals(layout); }
     boolean glass() { return FOCUS_GLASS.equals(focus); }
 
@@ -126,10 +158,38 @@ final class Look {
     }
 
     boolean saveHomeKeys(List<String> keys) {
-        return prefs.edit().putString(KEY_HOME, new JSONArray(keys).toString()).commit();
+        return prefs.edit().putString(KEY_HOME, new JSONArray(keys).toString()).remove(KEY_HOME_AUTO).commit();
+    }
+
+    /** Home still holds the automatic first-run selection. */
+    boolean homeIsAuto() { return prefs.getBoolean(KEY_HOME_AUTO, false); }
+
+    /** Replaces the automatic selection, keeping it marked as automatic. */
+    boolean saveAutoHomeKeys(List<String> keys) {
+        return prefs.edit().putString(KEY_HOME, new JSONArray(keys).toString()).putBoolean(KEY_HOME_AUTO, true).commit();
     }
 
     String ps4InputId() { return prefs.getString(KEY_PS4, null); }
+
+    /**
+     * The PS4 input changed outside Luma's own settings (the classic view writes the same key):
+     * move its Home tile to the new input, or drop it when the assignment was removed.
+     */
+    boolean movePs4Key(String oldId, String newId) {
+        List<String> keys = homeKeys();
+        String oldKey = oldId == null ? null : INPUT_PREFIX + oldId;
+        String newKey = newId == null ? null : INPUT_PREFIX + newId;
+        int at = oldKey == null ? -1 : keys.indexOf(oldKey);
+        if (at >= 0) {
+            if (newKey != null && !keys.contains(newKey)) keys.set(at, newKey); else keys.remove(at);
+        } else if (newKey != null && keys.size() < HOME_MAX && !keys.contains(newKey)) {
+            keys.add(newKey);
+        } else {
+            return true;
+        }
+        if (keys.isEmpty()) return true;
+        return saveHomeKeys(keys);
+    }
 
     boolean setPs4InputId(String inputId) {
         SharedPreferences.Editor edit = prefs.edit();

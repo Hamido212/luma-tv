@@ -166,4 +166,19 @@
         <item quantity="many">%d приложений</item>
         <item quantity="other">%d приложения</item>
     </plurals>
+    <string name="safe_mode">Luma запущена в безопасном режиме без фото. Чтобы выйти из него, выберите фон в настройках.</string>
+    <string name="tv_settings_app">Настройки ТВ</string>
+    <string name="st_backup">Резервная копия</string>
+    <string name="st_backup_none">Резервной копии пока нет</string>
+    <string name="st_backup_last">Последняя копия: %1$s</string>
+    <string name="st_backup_now">Сохранить сейчас</string>
+    <string name="st_restore">Восстановить</string>
+    <string name="st_restore_desc">Заменяет текущие настройки сохранёнными</string>
+    <string name="st_backup_note">Копия хранится на телевизоре: %1$s. Перед сбросом или переустановкой скопируйте её через adb pull, затем верните через adb push.</string>
+    <string name="st_backup_done">Настройки сохранены</string>
+    <string name="st_backup_failed">Не удалось сохранить. Ничего не изменено.</string>
+    <string name="st_restore_done">Настройки восстановлены</string>
+    <string name="st_restore_failed">Действительная копия не найдена. Ничего не изменено.</string>
+    <string name="a11y_position">%1$s, %2$d из %3$d</string>
+    <string name="a11y_selected">выбрано</string>
 </resources>

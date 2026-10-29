@@ -36,11 +36,21 @@ public final class StageView extends View {
         void toast(String text);
         /** Opens a text box for the name in the greeting. */
         void editName();
+        /** Clock format or greeting changed: only the clock line needs updating. */
+        void clockChanged();
+        /** The first frame reached the screen (crash-loop guard). */
+        void firstFrameDrawn();
+        /** When the last settings backup was written, or null when there is none. */
+        String backupInfo();
+        void backupSettings();
+        void restoreSettings();
+        /** The PS4 input was changed in Luma's settings. */
+        void ps4Changed(String inputId);
     }
 
     static final int S_HOME = 0, S_ALL = 1, S_SETTINGS = 2, S_BACKGROUND = 3, S_WALLPAPER = 4,
             S_ROTATION = 5, S_LAYOUT = 6, S_TYPE = 7, S_FOCUS = 8, S_EDITOR = 9, S_TV = 10,
-            S_INPUTS = 11, S_PS4 = 12, S_CLOCK = 13, S_GREETING = 14;
+            S_INPUTS = 11, S_PS4 = 12, S_CLOCK = 13, S_GREETING = 14, S_BACKUP = 15;
     static final int ED_HEAD = 0, ED_LEFT = 1, ED_REMOVE = 2, ED_RIGHT = 3;
     private static final int GROUPS = 6;
     private static final long WALL_DELAY = 200;
@@ -57,6 +67,15 @@ public final class StageView extends View {
     private List<HomeItem> catalog = new ArrayList<>();
     private final Map<String, HomeItem> byKey = new HashMap<>();
     private List<HomeItem> homeItems = new ArrayList<>();
+    /** Saved Home keys as a set; refreshed whenever Home is rebuilt (read every frame in sheets). */
+    private Set<String> homeKeys = new HashSet<>();
+    /** False until the first app list arrived: Home shows no "No apps" text and takes no keys. */
+    private boolean catalogReady;
+    private boolean firstFrame = true;
+    private boolean homeVisible;
+    /** Labels read every frame, fetched once (a locale change recreates the activity). */
+    private final String labelAllApps, labelSettings, labelEmpty;
+    private String lastSpoken;
 
     // Home focus
     private int homeIndex;
@@ -69,6 +88,8 @@ public final class StageView extends View {
 
     // Scenes
     private Scene scene;
+    /** Fades the first photo in over the plain ground instead of popping in. */
+    private final Anim sceneIn = new Anim(1);
     private Bitmap backdrop;
     private String backdropKey;
     private Scene candidate;
@@ -125,7 +146,20 @@ public final class StageView extends View {
         setFocusableInTouchMode(true);
         setDefaultFocusHighlightEnabled(false);
         stack.add(S_HOME);
-        loadScene(look.wallpaper, null);
+        labelAllApps = s(R.string.st_all_apps);
+        labelSettings = s(R.string.st_settings);
+        labelEmpty = s(R.string.st_home_empty);
+    }
+
+    /**
+     * Loads the photo. A fresh launcher start first advances "each time Home opens", so only one
+     * picture is decoded.
+     */
+    public void begin(boolean freshStart) {
+        if (freshStart) advanceOnOpen();
+        // Also for a flat background, so switching to Photo later shows the picture at once.
+        // Safe mode skips it: the photo is the likeliest reason for the crashes.
+        if (!look.safeMode()) loadScene(look.wallpaper, null);
     }
 
     // ------------------------------------------------------------------ public API
@@ -153,9 +187,45 @@ public final class StageView extends View {
         catalog = new ArrayList<>(items);
         byKey.clear();
         for (HomeItem item : items) byKey.put(item.key, item);
+        // A lifted row is only a preview of a new order; the list under it just changed.
+        if (edLifted) { edLifted = false; edBeforeLift = null; edMessage = null; }
+        boolean first = !catalogReady;
+        catalogReady = true;
         rebuildHome();
-        if (top() == S_ALL) allFocus = Math.min(allFocus, Math.max(0, catalog.size() - 1));
+        if (first && homeItems.isEmpty() && look.homeIsAuto()) fillEmptyHome();
+        // Apps can disappear while any list is open: keep every index inside its list.
+        allFocus = HomePainter.clampInt(allFocus, 0, Math.max(0, catalog.size() - 1));
+        int n = homeItems.size(), r = editorRight().size();
+        edLeft = HomePainter.clampInt(edLeft, 0, Math.max(0, n - 1));
+        edRight = HomePainter.clampInt(edRight, 0, Math.max(0, r - 1));
+        if (n == 0 && (edZone == ED_LEFT || edZone == ED_REMOVE)) edZone = r > 0 ? ED_RIGHT : ED_HEAD;
+        if (r == 0 && edZone == ED_RIGHT) edZone = n > 0 ? ED_LEFT : ED_HEAD;
+        if (top() == S_ALL) scrollAll(false);
         invalidate();
+    }
+
+    /**
+     * First start on a TV without any of the built-in defaults: put the first installed apps on
+     * Home instead of an empty dock. Only while Home was never edited.
+     */
+    private void fillEmptyHome() {
+        List<String> keys = new ArrayList<>();
+        for (HomeItem item : catalog) {
+            if (item.isInput() || (item.app != null && Marks.isTvSettings(item.app.packageName()))) continue;
+            keys.add(item.key);
+            if (keys.size() == 6) break;
+        }
+        if (keys.isEmpty() || !look.saveAutoHomeKeys(keys)) return;
+        rebuildHome();
+    }
+
+    /** Frees what can be rebuilt later: thumbnails and a gallery candidate. */
+    public void trimMemory() {
+        if (top() == S_WALLPAPER) return;
+        thumbs.clear();
+        thumbsRequested = false;
+        candidate = null;
+        candidateBackdrop = null;
     }
 
     /** Home key or a fresh start: close every panel and show Home. */
@@ -171,15 +241,18 @@ public final class StageView extends View {
     }
 
     public void setHomeVisible(boolean visible) {
+        homeVisible = visible;
         if (visible) resumeRotation(); else pauseRotation();
     }
 
-    /** "Each time Home opens" advances once per launcher start. */
+    /** "Each time Home opens": the next photo whenever Home comes back from an app or standby. */
     public void onLauncherStart() {
-        if (look.photo() && Look.ROT_OPEN.equals(look.rotation)) {
-            String next = Walls.next(look.wallpaper);
-            if (look.set("wallpaper", next)) loadScene(next, null);
-        }
+        if (advanceOnOpen()) loadScene(look.wallpaper, null);
+    }
+
+    private boolean advanceOnOpen() {
+        if (!look.photo() || !Look.ROT_OPEN.equals(look.rotation)) return false;
+        return look.set("wallpaper", Walls.next(look.wallpaper));
     }
 
     // ------------------------------------------------------------------ helpers
@@ -217,7 +290,8 @@ public final class StageView extends View {
 
     private static boolean isPage(int screen) {
         return screen == S_BACKGROUND || screen == S_ROTATION || screen == S_LAYOUT || screen == S_TYPE
-                || screen == S_FOCUS || screen == S_TV || screen == S_INPUTS || screen == S_PS4 || screen == S_CLOCK || screen == S_GREETING;
+                || screen == S_FOCUS || screen == S_TV || screen == S_INPUTS || screen == S_PS4 || screen == S_CLOCK
+                || screen == S_GREETING || screen == S_BACKUP;
     }
 
     private long dur(long ms) { return look.motion ? ms : 0; }
@@ -229,14 +303,18 @@ public final class StageView extends View {
     // ------------------------------------------------------------------ Home items
 
     private void rebuildHome() {
+        boolean wasEmpty = homeItems.isEmpty();
+        List<String> keys = look.homeKeys();
+        homeKeys = new HashSet<>(keys);
         List<HomeItem> items = new ArrayList<>();
-        for (String key : look.homeKeys()) {
+        for (String key : keys) {
             HomeItem item = byKey.get(key);
             if (item != null) items.add(item);
         }
         homeItems = items;
         homeIndex = HomePainter.clampInt(homeIndex, 0, Math.max(0, items.size() - 1));
         if (items.isEmpty()) homeZone = HomePainter.Z_UTIL;
+        else if (wasEmpty && top() == S_HOME) homeZone = HomePainter.Z_APPS; // apps arrived: focus them
         syncHomeScroll(false);
     }
 
@@ -255,7 +333,7 @@ public final class StageView extends View {
         if (d == 0) plate.jump(homeIndex); else plate.to(homeIndex, d);
     }
 
-    private Set<String> homeKeySet() { return new HashSet<>(look.homeKeys()); }
+    private Set<String> homeKeySet() { return homeKeys; }
 
     // ------------------------------------------------------------------ scenes
 
@@ -266,7 +344,12 @@ public final class StageView extends View {
         host.work(() -> {
             Scene loaded = Scene.load(context, wall, false);
             post(() -> {
-                if (loaded == null || !wall.id.equals(look.wallpaper)) return;
+                if (loaded == null) {
+                    if (wall.id.equals(loadingWall)) loadingWall = null;
+                    return;
+                }
+                if (!wall.id.equals(look.wallpaper)) return;
+                if (scene == null && look.motion) { sceneIn.jump(0); sceneIn.to(1, 240); }
                 scene = loaded;
                 loadingWall = null;
                 backdropKey = null;
@@ -344,6 +427,8 @@ public final class StageView extends View {
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         requestFocus();
+        // The first onResume runs before the window exists; start the timer now.
+        if (homeVisible && visibleSince < 0) resumeRotation();
     }
 
     @Override protected void onDetachedFromWindow() {
@@ -360,13 +445,26 @@ public final class StageView extends View {
         int screen = top();
         if (screen == S_HOME) {
             ensureBackdrop();
-            homePainter.draw(canvas, homeFrame(homeZone, scene, backdrop, now));
+            float in = sceneIn.value(now);
+            if (in < 1f && scene != null) {
+                // First photo: fade from the plain Home to the photographic one.
+                homePainter.draw(canvas, homeFrame(homeZone, null, null, now));
+                int layer = canvas.saveLayerAlpha(0, 0, 1920, 1080, Math.round(in * 255));
+                homePainter.draw(canvas, homeFrame(homeZone, scene, backdrop, now));
+                canvas.restoreToCount(layer);
+            } else {
+                homePainter.draw(canvas, homeFrame(homeZone, scene, backdrop, now));
+            }
         } else {
             drawSheet(canvas, screen, now);
         }
         canvas.restoreToCount(save);
+        if (firstFrame) {
+            firstFrame = false;
+            host.firstFrameDrawn();
+        }
         if (dockOff.running(now) || plate.running(now) || listOff.running(now) || lens.running(now)
-                || allFirst.running(now) || wallFirst.running(now) || edRightFirst.running(now)) {
+                || allFirst.running(now) || wallFirst.running(now) || edRightFirst.running(now) || sceneIn.running(now)) {
             postInvalidateOnAnimation();
         }
     }
@@ -378,15 +476,16 @@ public final class StageView extends View {
         f.backdrop = bd;
         f.items = homeItems;
         f.anchor = homeIndex;
-        f.zone = homeItems.isEmpty() && zone == HomePainter.Z_APPS ? HomePainter.Z_UTIL : zone;
+        f.zone = !catalogReady ? HomePainter.Z_NONE
+                : homeItems.isEmpty() && zone == HomePainter.Z_APPS ? HomePainter.Z_UTIL : zone;
         f.util = util;
         f.off = look.dock() ? dockOff.value(now) : listOff.value(now);
         f.plate = plate.value(now);
         f.lens = lens.value(now);
         f.clock = clock;
         f.greeting = greeting;
-        f.utilLabels = new String[]{s(R.string.st_all_apps), s(R.string.st_settings)};
-        f.emptyText = s(R.string.st_home_empty);
+        f.utilLabels = new String[]{labelAllApps, labelSettings};
+        f.emptyText = catalogReady ? labelEmpty : "";
         return f;
     }
 
@@ -403,7 +502,8 @@ public final class StageView extends View {
             case S_ALL:
                 sheet.titleWithCount(c, k, s(R.string.st_all_apps), String.valueOf(catalog.size()));
                 sheet.headButton(c, look, k, scene, s(R.string.st_edit_home), "home", allHead, false);
-                sheet.allApps(c, look, k, catalog, homeKeySet(), allFocus, allHead, allFirst.value(now), s(R.string.st_on_home));
+                sheet.allApps(c, look, k, catalog, homeKeySet(), allFocus, allHead, allFirst.value(now), s(R.string.st_on_home),
+                        s(R.string.empty_home));
                 sheet.hint(c, k, "OK", s(R.string.st_all_hint));
                 break;
             case S_EDITOR:
@@ -630,6 +730,10 @@ public final class StageView extends View {
                 greetOpt.description = !look.greetingOn() ? s(R.string.st_greeting_off)
                         : look.userName().isEmpty() ? s(R.string.st_name_none) : look.userName();
                 greetOpt.forward = true;
+                Page.Opt backupOpt = luma.add(new Page.Opt(s(R.string.st_backup), () -> push(S_BACKUP)));
+                String last = host.backupInfo();
+                backupOpt.description = last == null ? s(R.string.st_backup_none) : s(R.string.st_backup_last, last);
+                backupOpt.forward = true;
                 p.footnote = s(R.string.st_credits);
                 p.hint = s(R.string.st_hint_select);
                 break;
@@ -678,7 +782,7 @@ public final class StageView extends View {
                 for (int i = 0; i < 3; i++) {
                     final int mode = i;
                     Page.Opt o = sec.add(new Page.Opt(clockName(i), () -> {
-                        if (look.setClockMode(mode)) { host.catalogChanged(); refreshPage(); }
+                        if (look.setClockMode(mode)) { host.clockChanged(); refreshPage(); }
                     }));
                     o.checked = look.clockMode() == i;
                 }
@@ -692,12 +796,12 @@ public final class StageView extends View {
                 p.rowHeight = 88;
                 Page.Section sec = p.section(null, false);
                 Page.Opt on = sec.add(new Page.Opt(s(R.string.st_greeting_on), () -> {
-                    if (look.setGreetingOn(true)) { host.catalogChanged(); refreshPage(); }
+                    if (look.setGreetingOn(true)) { host.clockChanged(); refreshPage(); }
                     else host.toast(s(R.string.st_save_failed));
                 }));
                 on.checked = look.greetingOn();
                 Page.Opt off = sec.add(new Page.Opt(s(R.string.st_greeting_off), () -> {
-                    if (look.setGreetingOn(false)) { host.catalogChanged(); refreshPage(); }
+                    if (look.setGreetingOn(false)) { host.clockChanged(); refreshPage(); }
                     else host.toast(s(R.string.st_save_failed));
                 }));
                 off.checked = !look.greetingOn();
@@ -705,6 +809,23 @@ public final class StageView extends View {
                 Page.Opt name = nm.add(new Page.Opt(s(R.string.st_name_edit), host::editName));
                 name.description = look.userName().isEmpty() ? s(R.string.st_name_none) : look.userName();
                 p.hint = s(R.string.st_hint_apply);
+                break;
+            }
+            case S_BACKUP: {
+                p = new Page(screen, s(R.string.st_group_tv), s(R.string.st_backup), false);
+                p.width = 1056;
+                p.top = 260;
+                p.descHeight = 96;
+                Page.Section sec = p.section(null, false);
+                String last = host.backupInfo();
+                Page.Opt save = sec.add(new Page.Opt(s(R.string.st_backup_now), host::backupSettings));
+                save.description = last == null ? s(R.string.st_backup_none) : s(R.string.st_backup_last, last);
+                Page.Opt restore = sec.add(new Page.Opt(s(R.string.st_restore), host::restoreSettings));
+                restore.description = s(R.string.st_restore_desc);
+                restore.enabled = last != null;
+                p.footnoteBelow = true;
+                p.footnote = s(R.string.st_backup_note, "Android/data/" + getContext().getPackageName() + "/files/" + de.hamid.lumatv.data.SettingsBackup.FILE_NAME);
+                p.hint = s(R.string.st_hint_select);
                 break;
             }
             default:
@@ -725,7 +846,10 @@ public final class StageView extends View {
             backdropKey = null;
             syncHomeScroll(false);
         }
-        if ("bg".equals(key)) restartRotation();
+        if ("bg".equals(key)) {
+            restartRotation();
+            if (look.photo() && scene == null && loadingWall == null) loadScene(look.wallpaper, null);
+        }
         refreshPage();
         return true;
     }
@@ -768,6 +892,7 @@ public final class StageView extends View {
         }
         if (keys.isEmpty()) keys.add(oldKey);
         look.saveHomeKeys(keys);
+        host.ps4Changed(inputId);
         host.catalogChanged();
         refreshPage();
     }
@@ -883,10 +1008,13 @@ public final class StageView extends View {
     private void toggleOnHome(HomeItem item) {
         List<String> keys = look.homeKeys();
         if (keys.contains(item.key)) {
-            if (keys.size() <= 1) { host.toast(s(R.string.st_home_last)); return; }
+            if (homeItems.size() <= 1) { host.toast(s(R.string.st_home_last)); return; }
             keys.remove(item.key);
         } else {
-            if (keys.size() >= Look.HOME_MAX) { host.toast(s(R.string.st_home_full)); return; }
+            if (homeItems.size() >= Look.HOME_MAX) { host.toast(s(R.string.st_home_full)); return; }
+            for (int i = keys.size() - 1; keys.size() >= Look.HOME_MAX && i >= 0; i--) {
+                if (!byKey.containsKey(keys.get(i))) keys.remove(i);
+            }
             keys.add(item.key);
         }
         if (!look.saveHomeKeys(keys)) { host.toast(s(R.string.st_save_failed)); return; }
@@ -1063,16 +1191,19 @@ public final class StageView extends View {
             }
             if (heldKey != key) return true;
             heldKey = -1;
-            if (longFired) return true;
+            if (longFired) { speakFocus(); return true; }
             if (key == KeyEvent.KEYCODE_BACK) onBack(); else onKey(KeyEvent.KEYCODE_DPAD_CENTER);
+            speakFocus();
             return true;
         }
         if (!down) return true;
         if (key == KeyEvent.KEYCODE_MENU) {
             if (event.getRepeatCount() == 0) onLong();
+            speakFocus();
             return true;
         }
         onKey(key);
+        speakFocus();
         return true;
     }
 
@@ -1121,6 +1252,7 @@ public final class StageView extends View {
     }
 
     private void homeKey(int key) {
+        if (!catalogReady) return;
         int n = homeItems.size();
         boolean dock = look.dock();
         if (homeZone == HomePainter.Z_APPS && n > 0) {
@@ -1225,6 +1357,68 @@ public final class StageView extends View {
         } else if (key == KeyEvent.KEYCODE_DPAD_CENTER && n > 0) host.launch(catalog.get(allFocus));
         scrollAll(true);
         invalidate();
+    }
+
+    // ------------------------------------------------------------------ accessibility
+
+    /**
+     * The whole interface is one canvas, so TalkBack needs to be told what has focus. The label
+     * becomes the view's description and is announced when an accessibility service is on.
+     */
+    private void speakFocus() {
+        String label;
+        try {
+            label = focusLabel();
+        } catch (RuntimeException outOfStep) {
+            label = null;
+        }
+        if (label == null || label.equals(lastSpoken)) return;
+        lastSpoken = label;
+        setContentDescription(label);
+        android.view.accessibility.AccessibilityManager am =
+                getContext().getSystemService(android.view.accessibility.AccessibilityManager.class);
+        if (am != null && am.isEnabled()) announceForAccessibility(label);
+    }
+
+    private String position(String label, int index, int count) {
+        return s(R.string.a11y_position, label, index + 1, count);
+    }
+
+    String focusLabel() {
+        switch (top()) {
+            case S_HOME:
+                if (homeZone == HomePainter.Z_APPS && !homeItems.isEmpty()) {
+                    return position(homeItems.get(homeIndex).label, homeIndex, homeItems.size());
+                }
+                return util == HomePainter.UTIL_APPS ? labelAllApps : labelSettings;
+            case S_SETTINGS:
+                return groupNames()[groupFocus] + ", " + groupValues()[groupFocus];
+            case S_ALL:
+                if (allHead || catalog.isEmpty()) return s(R.string.st_edit_home);
+                return position(catalog.get(allFocus).listLabel, allFocus, catalog.size());
+            case S_WALLPAPER:
+                return wallBack ? s(R.string.st_background) : position(s(Walls.ALL[wallFocus].name), wallFocus, Walls.ALL.length);
+            case S_EDITOR: {
+                List<HomeItem> right = editorRight();
+                if (edZone == ED_HEAD) return s(R.string.st_done);
+                if (edZone == ED_REMOVE) return s(R.string.st_remove);
+                if (edZone == ED_RIGHT && !right.isEmpty()) return right.get(edRight).listLabel + ", " + s(R.string.st_add);
+                if (!homeItems.isEmpty()) return position(homeItems.get(edLeft).listLabel, edLeft, homeItems.size());
+                return null;
+            }
+            default: {
+                if (page == null) return null;
+                int[] pf = pageFocus.get(top());
+                if (pf == null) return null;
+                if (pf[0] < 0) return page.back;
+                Page.Row row = page.rows().get(pf[0]);
+                Page.Opt o = row.index >= 0 ? row.section.opts.get(row.index) : row.section.opts.get(pf[1]);
+                StringBuilder b = new StringBuilder(o.label);
+                if (o.checked) b.append(", ").append(s(R.string.a11y_selected));
+                if (o.description != null) b.append(", ").append(o.description);
+                return b.toString();
+            }
+        }
     }
 
     /** Kept for the activity: the inputs map changed (HDMI labels or PS4). */

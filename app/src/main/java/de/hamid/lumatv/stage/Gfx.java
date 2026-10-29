@@ -11,7 +11,6 @@ import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.text.TextPaint;
-import android.text.TextUtils;
 
 /** Canvas helpers that reproduce the CSS used by CleanFrame on a 1920 x 1080 stage. */
 final class Gfx {
@@ -135,8 +134,24 @@ final class Gfx {
         return top + lineHeight / 2 - (fm.ascent + fm.descent) / 2;
     }
 
+    /**
+     * Shortens s with a trailing "…" so it fits width with the current text paint. Measured
+     * directly (no Layout objects), so it costs nothing when the text already fits.
+     */
     String ellipsize(String s, float width) {
-        return TextUtils.ellipsize(s, text, width, TextUtils.TruncateAt.END).toString();
+        if (s == null || s.isEmpty() || text.measureText(s) <= width) return s == null ? "" : s;
+        final String dots = "\u2026";
+        float room = width - text.measureText(dots);
+        if (room <= 0) return "";
+        int lo = 0, hi = s.length();
+        while (lo < hi) {
+            int mid = (lo + hi + 1) >>> 1;
+            if (text.measureText(s, 0, mid) <= room) lo = mid; else hi = mid - 1;
+        }
+        // Never split a surrogate pair, and drop trailing spaces before the dots.
+        if (lo > 0 && Character.isHighSurrogate(s.charAt(lo - 1))) lo--;
+        while (lo > 0 && s.charAt(lo - 1) == ' ') lo--;
+        return s.substring(0, lo) + dots;
     }
 
     /** Sets the text paint; letterSpacing in em. */
@@ -147,6 +162,7 @@ final class Gfx {
         text.setColor(color);
         text.setTextAlign(Paint.Align.LEFT);
         text.clearShadowLayer();
+        text.setFontFeatureSettings(null);
         return text;
     }
 

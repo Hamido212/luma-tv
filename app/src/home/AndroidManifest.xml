@@ -3,6 +3,7 @@
     <application>
         <activity android:name=".stage.StageActivity" android:exported="true"
             android:launchMode="singleTask"
+            android:resumeWhilePausing="true"
             android:clearTaskOnLaunch="true"
             android:stateNotNeeded="true">
             <intent-filter>

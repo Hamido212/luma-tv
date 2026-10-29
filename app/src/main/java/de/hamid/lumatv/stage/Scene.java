@@ -33,6 +33,12 @@ final class Scene {
         this.frost = frost;
     }
 
+    /**
+     * GPU bitmaps for the photo and the composed backdrop. Tests that draw into a software canvas
+     * switch this off, because a software canvas cannot draw HARDWARE bitmaps.
+     */
+    static boolean hardware = true;
+
     Bitmap field(String material) {
         if (Look.MAT_FROST.equals(material)) return frost;
         if (Look.MAT_CLEAR.equals(material)) return clear;
@@ -44,7 +50,7 @@ final class Scene {
         try {
             int sample = halfResolution ? 2 : 1;
             Bitmap picture = wall.asset != null
-                    ? decode(context, wall.asset, sample, true)
+                    ? decode(context, wall.asset, sample, hardware)
                     : gpu(renderVector(context, wall.vector, STAGE_W / sample, STAGE_H / sample));
             Bitmap small = wall.asset != null
                     ? decode(context, wall.asset, FIELD_SCALE, false)
@@ -92,7 +98,7 @@ final class Scene {
     }
 
     private static Bitmap gpu(Bitmap software) {
-        if (software == null) return null;
+        if (software == null || !hardware) return software;
         Bitmap gpu = software.copy(Bitmap.Config.HARDWARE, false);
         if (gpu == null) return software;
         software.recycle();

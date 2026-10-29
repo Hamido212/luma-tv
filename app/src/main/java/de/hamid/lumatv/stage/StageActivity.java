@@ -3,9 +3,12 @@ package de.hamid.lumatv.stage;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
+import android.content.ComponentCallbacks2;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Drawable;
 import android.media.tv.TvInputInfo;
@@ -18,8 +21,10 @@ import android.provider.Settings;
 import android.text.InputFilter;
 import android.text.InputType;
 import android.text.format.DateFormat;
+import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.Toast;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Comparator;
@@ -30,6 +35,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import de.hamid.lumatv.R;
 import de.hamid.lumatv.data.RecentStore;
+import de.hamid.lumatv.data.SettingsBackup;
 import de.hamid.lumatv.model.AppEntry;
 import de.hamid.lumatv.platform.AppCatalog;
 import de.hamid.lumatv.platform.AppLauncher;
@@ -44,46 +50,66 @@ import de.hamid.lumatv.ui.DashboardActivity;
  * Settings → TV &amp; Luma.
  */
 public final class StageActivity extends Activity implements StageView.Host {
+    static final String PREFS = "luma_home";
     private static final long LAUNCH_GUARD_MS = 1200;
+    /** Package broadcasts arrive in bursts (an update sends three); reload once after the burst. */
+    private static final long CATALOG_DEBOUNCE_MS = 500;
+    /** After this long in another app, Home opens on Home again instead of an open panel. */
+    private static final long BACK_TO_HOME_MS = 10 * 60 * 1000;
 
-    private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    /** App list and icons. Kept apart from the image worker so Home gets its apps first. */
+    private final ExecutorService catalogWorker = Executors.newSingleThreadExecutor();
+    /** Photos, glass fields and thumbnails. */
+    private final ExecutorService imageWorker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
+    private SharedPreferences prefs;
     private StageView stage;
     private Look look;
     private RecentStore recents;
     private boolean homeVariant;
     private boolean catalogDirty;
     private boolean resumed;
+    private boolean started;
+    private long stoppedAt = -1;
     private long lastLaunch;
     private int catalogToken;
     private Map<String, String> inputCache = new LinkedHashMap<>();
+    private AlertDialog nameDialog;
+    /** PS4 input as last seen here; the classic view can change it behind Home's back. */
+    private String ps4Seen;
 
-    private final Runnable clockTick = new Runnable() {
-        @Override public void run() {
-            updateClock();
-            long now = System.currentTimeMillis();
-            main.postDelayed(this, 60000 - now % 60000 + 50);
-        }
+    private final Runnable reloadCatalog = this::loadCatalog;
+
+    /** Minute ticks, manual time changes, time zone and 12/24 h changes. */
+    private final BroadcastReceiver time = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) { updateClock(); }
     };
 
     private final BroadcastReceiver packages = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
-            if (resumed) loadCatalog(); else catalogDirty = true;
+            // The removal half of an update is followed by ADDED/REPLACED; react to those.
+            if (Intent.ACTION_PACKAGE_REMOVED.equals(intent.getAction())
+                    && intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return;
+            catalogChanged(false);
         }
     };
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         homeVariant = getResources().getBoolean(R.bool.is_home_variant);
-        android.content.SharedPreferences prefs = getSharedPreferences("luma_home", MODE_PRIVATE);
-        look = new Look(prefs);
+        prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        boolean safe = SafeStart.enter(prefs, bootCount(), SystemClock.elapsedRealtime());
+        look = new Look(prefs, safe);
+        look.migrate();
+        ps4Seen = look.ps4InputId();
         recents = new RecentStore(prefs);
         stage = new StageView(this, this, look);
         setContentView(stage);
         stage.requestFocus();
-        if (state == null) stage.onLauncherStart();
         refreshInputs();
         loadCatalog();
+        stage.begin(state == null);
+        if (safe) toast(getString(R.string.safe_mode));
 
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_PACKAGE_ADDED);
@@ -91,18 +117,59 @@ public final class StageActivity extends Activity implements StageView.Host {
         filter.addAction(Intent.ACTION_PACKAGE_CHANGED);
         filter.addAction(Intent.ACTION_PACKAGE_REPLACED);
         filter.addDataScheme("package");
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(packages, filter, Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            registerReceiver(packages, filter);
+        register(packages, filter);
+        // Apps on USB storage arrive after boot; suspended apps are not launchable.
+        IntentFilter bulk = new IntentFilter();
+        bulk.addAction(Intent.ACTION_EXTERNAL_APPLICATIONS_AVAILABLE);
+        bulk.addAction(Intent.ACTION_EXTERNAL_APPLICATIONS_UNAVAILABLE);
+        bulk.addAction(Intent.ACTION_PACKAGES_SUSPENDED);
+        bulk.addAction(Intent.ACTION_PACKAGES_UNSUSPENDED);
+        register(packages, bulk);
+    }
+
+    private int bootCount() {
+        try {
+            return Settings.Global.getInt(getContentResolver(), Settings.Global.BOOT_COUNT, -1);
+        } catch (RuntimeException unavailable) {
+            return -1;
         }
+    }
+
+    private void register(BroadcastReceiver receiver, IntentFilter filter) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(receiver, filter);
+        }
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        if (started) {
+            // Back from an app or from standby.
+            boolean longAway = stoppedAt >= 0 && SystemClock.elapsedRealtime() - stoppedAt > BACK_TO_HOME_MS;
+            if (longAway) stage.goHome();
+            stage.onLauncherStart();
+        }
+        started = true;
+        stoppedAt = -1;
     }
 
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
-        main.removeCallbacks(clockTick);
-        clockTick.run();
+        updateClock();
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_TIME_TICK);
+        filter.addAction(Intent.ACTION_TIME_CHANGED);
+        filter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+        register(time, filter);
+        String ps4 = look.ps4InputId();
+        if (ps4 == null ? ps4Seen != null : !ps4.equals(ps4Seen)) {
+            look.movePs4Key(ps4Seen, ps4);
+            ps4Seen = ps4;
+            catalogDirty = true;
+        }
         if (catalogDirty) loadCatalog();
         stage.setHomeVisible(true);
         stage.requestFocus();
@@ -110,14 +177,21 @@ public final class StageActivity extends Activity implements StageView.Host {
 
     @Override protected void onPause() {
         resumed = false;
-        main.removeCallbacks(clockTick);
+        unregisterReceiver(time);
         stage.setHomeVisible(false);
         super.onPause();
     }
 
+    @Override protected void onStop() {
+        stoppedAt = SystemClock.elapsedRealtime();
+        super.onStop();
+    }
+
     @Override protected void onDestroy() {
         unregisterReceiver(packages);
-        worker.shutdownNow();
+        if (nameDialog != null) nameDialog.dismiss();
+        catalogWorker.shutdownNow();
+        imageWorker.shutdownNow();
         main.removeCallbacksAndMessages(null);
         super.onDestroy();
     }
@@ -126,8 +200,14 @@ public final class StageActivity extends Activity implements StageView.Host {
         super.onNewIntent(intent);
         setIntent(intent);
         if (intent.hasCategory(Intent.CATEGORY_HOME) || intent.hasCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)) {
+            if (nameDialog != null) nameDialog.dismiss();
             stage.goHome();
         }
+    }
+
+    @Override public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) stage.trimMemory();
     }
 
     // ------------------------------------------------------------------ data
@@ -144,10 +224,7 @@ public final class StageActivity extends Activity implements StageView.Host {
     /** "Good evening, Name" by time of day; empty when the greeting is switched off. */
     private String greetingText(int hour) {
         if (!look.greetingOn()) return "";
-        int res = hour < 5 ? R.string.greeting_night : hour < 11 ? R.string.greeting_morning
-                : hour < 17 ? R.string.greeting_day : hour < 22 ? R.string.greeting_evening : R.string.greeting_night;
-        String name = look.userName().trim();
-        return name.isEmpty() ? getString(res) : getString(res) + ", " + name;
+        return Greeting.text(true, look.userName(), getString(Greeting.forHour(hour)), getString(R.string.greeting_with_name));
     }
 
     private void refreshInputs() {
@@ -160,6 +237,12 @@ public final class StageActivity extends Activity implements StageView.Host {
         inputCache = labels;
     }
 
+    private void catalogChanged(boolean now) {
+        main.removeCallbacks(reloadCatalog);
+        if (!resumed) { catalogDirty = true; return; }
+        if (now) loadCatalog(); else main.postDelayed(reloadCatalog, CATALOG_DEBOUNCE_MS);
+    }
+
     private void loadCatalog() {
         catalogDirty = false;
         final int token = ++catalogToken;
@@ -167,7 +250,9 @@ public final class StageActivity extends Activity implements StageView.Host {
         final String own = getPackageName();
         final String ps4 = look.ps4InputId();
         final String ps4Label = getString(R.string.st_ps4_item);
-        worker.execute(() -> {
+        final String tvSettingsLabel = getString(R.string.tv_settings_app);
+        if (catalogWorker.isShutdown()) return;
+        catalogWorker.execute(() -> {
             List<HomeItem> items = new ArrayList<>();
             for (AppEntry entry : AppCatalog.discover(pm, own)) {
                 String pkg = entry.packageName();
@@ -180,12 +265,14 @@ public final class StageActivity extends Activity implements StageView.Host {
                         icon = null;
                     }
                 }
-                items.add(new HomeItem(pkg, Marks.label(pkg, entry.label), entry, null, mark, icon));
+                String label = Marks.isTvSettings(pkg) ? tvSettingsLabel : Marks.label(pkg, entry.label);
+                items.add(new HomeItem(pkg, label, entry, null, mark, icon));
             }
             if (ps4 != null) {
                 items.add(new HomeItem(Look.INPUT_PREFIX + ps4, ps4Label, null, ps4, "playstation", null));
             }
             items.sort(Comparator.comparing((HomeItem h) -> h.label, String.CASE_INSENSITIVE_ORDER));
+            HomeItem.disambiguate(items);
             main.post(() -> {
                 if (token != catalogToken || isDestroyed()) return;
                 stage.setCatalog(items);
@@ -230,7 +317,7 @@ public final class StageActivity extends Activity implements StageView.Host {
     }
 
     @Override public void work(Runnable task) {
-        if (!worker.isShutdown()) worker.execute(task);
+        if (!imageWorker.isShutdown()) imageWorker.execute(task);
     }
 
     @Override public boolean homeVariant() { return homeVariant; }
@@ -239,10 +326,23 @@ public final class StageActivity extends Activity implements StageView.Host {
 
     @Override public void catalogChanged() {
         updateClock();
-        loadCatalog();
+        catalogChanged(true);
+    }
+
+    @Override public void firstFrameDrawn() {
+        SafeStart.ok(prefs);
+    }
+
+    @Override public void clockChanged() {
+        updateClock();
+    }
+
+    @Override public void ps4Changed(String inputId) {
+        ps4Seen = inputId;
     }
 
     @Override public void editName() {
+        if (nameDialog != null && nameDialog.isShowing()) return;
         final EditText input = new EditText(this);
         input.setSingleLine(true);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
@@ -250,7 +350,14 @@ public final class StageActivity extends Activity implements StageView.Host {
         input.setText(look.userName());
         input.setSelection(input.getText().length());
         input.setHint(R.string.st_name_hint);
-        new AlertDialog.Builder(this, R.style.LumaDialog)
+        // "Done" on the TV keyboard saves, like OK in the dialog.
+        input.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        input.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId != EditorInfo.IME_ACTION_DONE || nameDialog == null) return false;
+            nameDialog.getButton(DialogInterface.BUTTON_POSITIVE).performClick();
+            return true;
+        });
+        nameDialog = new AlertDialog.Builder(this, R.style.LumaDialog)
                 .setTitle(R.string.st_name_title)
                 .setView(input)
                 .setPositiveButton(android.R.string.ok, (dialog, which) -> {
@@ -263,8 +370,55 @@ public final class StageActivity extends Activity implements StageView.Host {
                     }
                 })
                 .setNegativeButton(R.string.cancel, null)
-                .setOnDismissListener(dialog -> stage.requestFocus())
+                .setOnDismissListener(dialog -> {
+                    nameDialog = null;
+                    stage.requestFocus();
+                })
                 .show();
+    }
+
+    // ------------------------------------------------------------------ backup
+
+    private File backupFile() {
+        File dir = getExternalFilesDir(null);
+        return dir == null ? null : new File(dir, SettingsBackup.FILE_NAME);
+    }
+
+    @Override public String backupInfo() {
+        File file = backupFile();
+        if (file == null || !file.isFile()) return null;
+        return DateFormat.getMediumDateFormat(this).format(file.lastModified()) + " "
+                + DateFormat.getTimeFormat(this).format(file.lastModified());
+    }
+
+    @Override public void backupSettings() {
+        File file = backupFile();
+        if (file == null || !SettingsBackup.write(prefs, file, versionName())) {
+            toast(getString(R.string.st_backup_failed));
+            return;
+        }
+        toast(getString(R.string.st_backup_done));
+        stage.nameChanged();
+    }
+
+    @Override public void restoreSettings() {
+        File file = backupFile();
+        int restored = file == null ? -1 : SettingsBackup.read(prefs, file);
+        if (restored < 0) {
+            toast(getString(R.string.st_restore_failed));
+            return;
+        }
+        toast(getString(R.string.st_restore_done));
+        // Every setting is read when the screen starts; start it afresh with the restored values.
+        recreate();
+    }
+
+    private String versionName() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (PackageManager.NameNotFoundException impossible) {
+            return "";
+        }
     }
 
     @Override public void toast(String text) {
