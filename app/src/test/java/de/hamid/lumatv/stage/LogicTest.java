@@ -175,8 +175,8 @@ public class LogicTest {
         int youtube = 0;
         boolean tizen = false;
         for (HomeItem item : items) {
-            if (item.label.startsWith("YouTube")) youtube++;
-            if (item.label.equals("YouTube · TizenTube")) tizen = true;
+            if (item.label.equals("YouTube")) youtube++;
+            if (item.listLabel.equals("YouTube · TizenTube")) tizen = true;
         }
         assertEquals(2, youtube);
         assertTrue(tizen);

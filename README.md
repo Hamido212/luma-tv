@@ -18,6 +18,9 @@ Gestaltung und Bedienung folgen [CleanFrame](https://github.com/nthnclrk/CleanFr
 - **Apps auf Home:** Editor mit zwei Spalten zum Sortieren, Hinzufügen und Entfernen.
 - **Begrüßung (optional):** „Guten Abend, Hamid“ unter der Uhr, mit eigenem Namen. Standardmäßig aus, einschalten unter Einstellungen › TV & Luma › Begrüßung.
 - **Deutsch, Englisch und Russisch**, je nach Systemsprache des Fernsehers.
+- **Sichern und Wiederherstellen:** Alle Einstellungen landen als eine Datei auf dem Fernseher (Einstellungen › TV & Luma › Sichern & Wiederherstellen). Mit `adb pull` übersteht sie einen Werksreset oder einen neuen Fernseher, siehe [unten](#einstellungen-sichern).
+- **Robust als einziger Startbildschirm:** Startet Luma dreimal hintereinander nicht, kommt ein sicherer Modus ohne Foto statt einer Absturzschleife. Neue, entfernte und auf USB-Speicher liegende Apps erscheinen ohne Neustart, die Uhr folgt Zeitzone und 12/24 h sofort.
+- **Für TalkBack lesbar:** Der Bildschirmleser sagt an, was den Fokus hat („Netflix, 2 von 6“).
 - **Spielkonsole per HDMI:** Ein Eingang lässt sich als PlayStation zuordnen und erscheint dann im Dock.
 - **Klassische Ansicht:** der frühere Kategorien-Startbildschirm im Holzschnitt-Stil ([Details](docs/design-klassisch.md)).
 - **Datensparsam:** Kein Internetzugriff, keine Konten, keine Analyse. Einzige Berechtigung ist `ACCESS_NETWORK_STATE`. Alles bleibt lokal auf dem Fernseher.
@@ -45,10 +48,23 @@ Du brauchst ADB (Android Platform Tools) und am Fernseher aktiviertes USB- oder 
 2. Installieren:
    ```sh
    adb connect <IP-des-Fernsehers>:5555
-   adb install luma-tv-0.3.0-home.apk
+   adb install luma-tv-0.4.0-home.apk
    adb shell cmd package set-home-activity --user 0 de.hamid.lumatv/.stage.StageActivity
    ```
 3. Home-Taste drücken.
+
+**Update von 0.3:** `adb install -r luma-tv-0.4.0-home.apk`. Die Einstellungen bleiben erhalten, Luma bleibt Startbildschirm. Die Release-APKs sind mit demselben Schlüssel signiert wie 0.3.0; APKs aus den GitHub-Actions-Läufen tragen einen anderen und lassen sich nur nach einer Deinstallation installieren.
+
+### Einstellungen sichern
+
+Unter Einstellungen › TV & Luma › Sichern & Wiederherstellen schreibt „Jetzt sichern“ die Datei `luma-settings.json` in Lumas App-Ordner. Vor einem Werksreset oder einer Neuinstallation abholen und danach zurücklegen:
+
+```sh
+adb pull /sdcard/Android/data/de.hamid.lumatv/files/luma-settings.json
+adb push luma-settings.json /sdcard/Android/data/de.hamid.lumatv/files/
+```
+
+Danach „Wiederherstellen“ wählen. Eine kaputte oder fremde Datei ändert nichts.
 
 > **Hinweis zu Google TV:** Auf Google-TV-Geräten übernimmt der Google-TV-Startbildschirm die Home-Taste meist trotzdem. Auf dem Testgerät wurde Luma erst zuverlässig zum Startbildschirm, nachdem der Google-TV-Launcher für den Benutzer entfernt (`pm uninstall --user 0 com.google.android.apps.tv.launcherx`) und der Einrichtungsassistent deaktiviert wurde (`pm disable-user --user 0 com.google.android.tungsten.setupwraith`). Das greift ins System ein. Mach das nur, wenn du den Rückweg kennst:
 >
@@ -76,9 +92,14 @@ JDK 17, Android SDK Platform 34. Gradle 8.9 und AGP 8.7.3 sind fest eingestellt.
 
 ```sh
 ./gradlew :app:assembleHomeDebug :app:assemblePreviewDebug
+./gradlew :app:testHomeDebugUnitTest      # Tests, dazu Bildschirmfotos in app/build/screenshots
 ```
 
-GitHub Actions baut beide Varianten bei jedem Push auf `main` und bei jedem Pull Request. Die APKs liegen danach als Artefakt `luma-tv-debug-apks` am jeweiligen Lauf.
+Die Tests laufen mit Robolectric auf der JVM (nur Testabhängigkeiten, die APK bleibt ohne Bibliotheken). `StageScreenshotTest` zeichnet Home, Einstellungen, Alle Apps und den Editor in 1920×1080 auf Deutsch, Englisch und Russisch, damit sich Designänderungen ohne Fernseher prüfen lassen.
+
+GitHub Actions baut beide Varianten bei jedem Push auf `main` und bei jedem Pull Request, führt die Tests aus und prüft die Grundsätze: keine INTERNET-Berechtigung, keine Laufzeitbibliotheken. APKs, Bildschirmfotos und Berichte liegen als Artefakte am jeweiligen Lauf.
+
+**Release-Signatur:** `assembleHomeRelease` signiert mit dem Schlüssel aus den Umgebungsvariablen `LUMA_STORE_FILE`, `LUMA_STORE_PASSWORD`, `LUMA_KEY_ALIAS` und `LUMA_KEY_PASSWORD` (oder gleichnamigen Gradle-Properties `luma.*`). Ohne diese Angaben wird mit dem lokalen Debug-Schlüssel signiert, wie bei 0.3.0. Ein Schlüssel gehört nie ins Repository.
 
 | Variante | Paket | Zweck |
 |---|---|---|
@@ -91,7 +112,9 @@ GitHub Actions baut beide Varianten bei jedem Push auf `main` und bei jedem Pull
 app/src/main/java/de/hamid/lumatv/
   stage/     Startbildschirm ab 0.3: StageActivity, StageView (Fokus, Tasten, Bildschirme),
              HomePainter (Dock, Liste), SheetPainter (Einstellungen, Alle Apps, Editor),
-             Scene (Foto und Glas), Walls (Galerie), Marks (Icons), Type (Schriften), Look
+             Scene (Foto und Glas), Walls (Galerie), Marks (Icons), Type (Schriften), Look,
+             SafeStart (Schutz vor Absturzschleifen), Greeting
+  data/      Sicherung der Einstellungen (SettingsBackup), Verlauf, klassische Konfiguration
   ui/        klassische Ansicht (0.2)
   platform/  App-Katalog, App-Start, HDMI-Eingänge, Einstellungen
 app/src/main/assets/   Fotos (1920×1080) und variable Schriften
@@ -127,6 +150,7 @@ Luma TV is a home screen (launcher) for Android TV / Google TV, built natively i
 - a glass dock or a big-type list;
 - 15 Unsplash photos plus three original vector wallpapers;
 - live-preview settings, an All apps grid and a two-column Home editor;
+- a local settings backup file, a safe mode instead of a crash loop, and TalkBack focus announcements;
 - an optional greeting with your name under the clock (off by default);
 - HDMI console shortcuts.
 

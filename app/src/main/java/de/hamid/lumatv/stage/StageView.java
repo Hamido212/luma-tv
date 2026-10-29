@@ -1395,15 +1395,15 @@ public final class StageView extends View {
                 return groupNames()[groupFocus] + ", " + groupValues()[groupFocus];
             case S_ALL:
                 if (allHead || catalog.isEmpty()) return s(R.string.st_edit_home);
-                return position(catalog.get(allFocus).label, allFocus, catalog.size());
+                return position(catalog.get(allFocus).listLabel, allFocus, catalog.size());
             case S_WALLPAPER:
                 return wallBack ? s(R.string.st_background) : position(s(Walls.ALL[wallFocus].name), wallFocus, Walls.ALL.length);
             case S_EDITOR: {
                 List<HomeItem> right = editorRight();
                 if (edZone == ED_HEAD) return s(R.string.st_done);
                 if (edZone == ED_REMOVE) return s(R.string.st_remove);
-                if (edZone == ED_RIGHT && !right.isEmpty()) return right.get(edRight).label + ", " + s(R.string.st_add);
-                if (!homeItems.isEmpty()) return position(homeItems.get(edLeft).label, edLeft, homeItems.size());
+                if (edZone == ED_RIGHT && !right.isEmpty()) return right.get(edRight).listLabel + ", " + s(R.string.st_add);
+                if (!homeItems.isEmpty()) return position(homeItems.get(edLeft).listLabel, edLeft, homeItems.size());
                 return null;
             }
             default: {

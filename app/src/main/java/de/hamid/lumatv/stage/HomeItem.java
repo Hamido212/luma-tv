@@ -18,6 +18,8 @@ final class HomeItem {
     final String mark;
     /** The installed app icon, used in All apps when there is no bundled mark. */
     final Drawable icon;
+    /** Name in All apps and the editor; longer than {@link #label} only when two apps share a name. */
+    String listLabel;
 
     HomeItem(String key, String label, AppEntry app, String inputId, String mark, Drawable icon) {
         this.key = key;
@@ -26,24 +28,26 @@ final class HomeItem {
         this.inputId = inputId;
         this.mark = mark;
         this.icon = icon;
+        this.listLabel = label;
     }
 
     boolean isInput() { return inputId != null; }
 
     /**
      * Two apps can end up with the same name (TizenTube is shown as "YouTube" next to the real
-     * YouTube app). Those whose own label differs get it appended: "YouTube · TizenTube".
+     * YouTube app). Lists that show both (All apps, the editor) then add the app's own name:
+     * "YouTube · TizenTube". Home keeps the short name the viewer is used to.
      */
     static void disambiguate(List<HomeItem> items) {
         Map<String, Integer> count = new HashMap<>();
         for (HomeItem item : items) count.merge(item.label.toLowerCase(Locale.ROOT), 1, Integer::sum);
-        for (int i = 0; i < items.size(); i++) {
-            HomeItem item = items.get(i);
+        for (HomeItem item : items) {
             if (count.get(item.label.toLowerCase(Locale.ROOT)) < 2 || item.app == null) continue;
             String own = item.app.label;
             if (own == null || own.trim().isEmpty() || own.trim().equalsIgnoreCase(item.label)) continue;
-            items.set(i, new HomeItem(item.key, item.label + " · " + own.trim(), item.app, item.inputId, item.mark, item.icon));
+            item.listLabel = item.label + " · " + own.trim();
         }
+    }
     }
 
     /** One or two initials, like CleanFrame's monogram. */

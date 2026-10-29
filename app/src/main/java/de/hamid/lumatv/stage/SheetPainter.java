@@ -466,9 +466,9 @@ final class SheetPainter {
             c.restoreToCount(ms);
             TextPaint p = g.font(type.manrope(500), 34, -.6f / 34, ink);
             // Long names first step down to 30 px, only then are they shortened.
-            if (p.measureText(item.label) > 296) p.setTextSize(30);
+            if (p.measureText(item.listLabel) > 296) p.setTextSize(30);
             p.setTextAlign(Paint.Align.CENTER);
-            c.drawText(g.ellipsize(item.label, 296), x + 160, g.baseline(p, y + 114, 44), p);
+            c.drawText(g.ellipsize(item.listLabel, 296), x + 160, g.baseline(p, y + 114, 44), p);
             p.setTextAlign(Paint.Align.LEFT);
             if (onHome.contains(item.key)) {
                 TextPaint q = g.font(type.manrope(500), 28, 0, f ? k.ink : k.mute);
@@ -517,7 +517,7 @@ final class SheetPainter {
             marks.item(c, item, 112 + 16 + 36 + 20, y + 14, 56, 44, 36, k.ink, true, mono);
             TextPaint p = g.font(type.manrope(500), 34, -.5f / 34, k.ink);
             float tx = 112 + 16 + 36 + 20 + 56 + 20;
-            c.drawText(g.ellipsize(item.label, nameW - (tx - 112) - 64), tx, g.baseline(p, y + 14, 44), p);
+            c.drawText(g.ellipsize(item.listLabel, nameW - (tx - 112) - 64), tx, g.baseline(p, y + 14, 44), p);
             if (lifted && nameFocus) {
                 if (i > 0) g.chevron(c, 112 + nameW - 52, y + 2, 30, 2, 1.8f, k.ink);
                 if (i < left.size() - 1) g.chevron(c, 112 + nameW - 52, y + 40, 30, 3, 1.8f, k.ink);
@@ -552,7 +552,7 @@ final class SheetPainter {
                 c.drawText(addLabel, 1040 + 768 - 16 - verbW, g.baseline(v, y + 16, 40), v);
             }
             p = g.font(type.manrope(500), 34, -.5f / 34, k.ink);
-            c.drawText(g.ellipsize(item.label, 768 - (tx - 1040) - verbW - 40), tx, g.baseline(p, y + 14, 44), p);
+            c.drawText(g.ellipsize(item.listLabel, 768 - (tx - 1040) - verbW - 40), tx, g.baseline(p, y + 14, 44), p);
         }
         c.restoreToCount(save);
         if (rightFirst > 0.01f) g.chevron(c, 1408, 228, 32, 2, 1.8f, k.mute);
