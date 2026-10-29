@@ -135,8 +135,11 @@ final class SheetPainter {
         float x = 140;
         if (key != null) x += g.keyPill(c, key, 140, 969, k.mute, type.manrope(600)) + 16;
         TextPaint p = g.font(type.manrope(500), 26, 0, k.mute);
-        c.drawText(text, x, g.baseline(p, 968, 36), p);
+        c.drawText(g.ellipsize(text, HINT_RIGHT - x), x, g.baseline(p, 968, 36), p);
     }
+
+    /** Right end of the bottom hint; the "more" cue of a scrolling grid sits beyond it. */
+    static final float HINT_RIGHT = 1700;
 
     /** var(--plate) inside sheets. */
     void sheetPlate(Canvas c, Ink k, float l, float t, float w, float h, float r, boolean lifted) {
@@ -192,25 +195,58 @@ final class SheetPainter {
 
     // ------------------------------------------------------------------ appearance pages
 
+    /** Lowest y a settings page may use; the hint line starts at 968. */
+    static final float PAGE_BOTTOM = 944;
+
     void page(Canvas c, Ink k, Page page, int focusRow, int focusCol, Map<String, Bitmap> thumbs) {
         backButton(c, k, page.back, focusRow == -1);
         title(c, k, page.title, 132, 68);
-        List<Page.Row> rows = page.rows();
+        // Long pages (many HDMI inputs, Russian descriptions) scroll so the focused row stays in view.
+        float[] span = {-1, -1};
+        float end = sections(c, k, page, focusRow, focusCol, thumbs, false, span);
+        float scroll = 0;
+        if (end > PAGE_BOTTOM && span[1] > PAGE_BOTTOM - 24) {
+            scroll = Math.min(end - PAGE_BOTTOM, span[1] - (PAGE_BOTTOM - 24));
+        }
+        int save = c.save();
+        if (end > PAGE_BOTTOM) c.clipRect(0, page.top - 8, 1920, PAGE_BOTTOM + 8);
+        c.translate(0, -scroll);
+        end = sections(c, k, page, focusRow, focusCol, thumbs, true, span);
+        c.restoreToCount(save);
+        if (scroll > 0.5f) g.chevron(c, 140 + page.width / 2 - 16, page.top - 40, 32, 2, 1.8f, k.mute);
+        if (end - scroll > PAGE_BOTTOM + 0.5f) g.chevron(c, 140 + page.width / 2 - 16, PAGE_BOTTOM - 4, 32, 3, 1.8f, k.mute);
+        if (page.footnote != null) {
+            // Pages without a preview keep the right column for quiet notes such as credits.
+            TextPaint p = g.font(type.manrope(400), 24, 0, k.faint);
+            if (page.preview) drawWrapped(c, p, page.footnote, 140, Math.min(Math.max(end - scroll + 40, 900), PAGE_BOTTOM - 40), 640, 32);
+            else drawWrapped(c, p, page.footnote, 1300, page.top + 48, 480, 34);
+        }
+        hint(c, k, "OK", page.hint);
+    }
+
+    /** Lays out (and with draw, paints) the sections. Returns the bottom; span gets the focused row. */
+    private float sections(Canvas c, Ink k, Page page, int focusRow, int focusCol, Map<String, Bitmap> thumbs,
+                           boolean draw, float[] span) {
         float y = page.top;
         int rowIndex = 0;
         for (Page.Section s : page.sections) {
             if (s != page.sections.get(0)) y += page.sectionGap;
             if (s.label != null) {
-                TextPaint p = g.font(type.manrope(500), 28, -.2f / 28, k.mute);
-                c.drawText(s.label, 140, g.baseline(p, y, 36), p);
+                if (draw) {
+                    TextPaint p = g.font(type.manrope(500), 28, -.2f / 28, k.mute);
+                    c.drawText(s.label, 140, g.baseline(p, y, 36), p);
+                }
                 y += 36 + 12;
             }
             if (s.horizontal) {
                 int n = s.opts.size();
                 float w = (page.width - 12 * (n - 1)) / n;
-                for (int i = 0; i < n; i++) {
-                    boolean f = focusRow == rowIndex && focusCol == i;
-                    option(c, k, s.opts.get(i), 140 + i * (w + 12), y, w, 92, f, true, thumbs);
+                if (focusRow == rowIndex) { span[0] = y; span[1] = y + 92; }
+                if (draw) {
+                    for (int i = 0; i < n; i++) {
+                        boolean f = focusRow == rowIndex && focusCol == i;
+                        option(c, k, s.opts.get(i), 140 + i * (w + 12), y, w, 92, f, true, thumbs);
+                    }
                 }
                 y += 92;
                 rowIndex++;
@@ -218,26 +254,20 @@ final class SheetPainter {
                 for (int i = 0; i < s.opts.size(); i++) {
                     Page.Opt o = s.opts.get(i);
                     float h = o.description != null ? page.descHeight : page.rowHeight;
-                    option(c, k, o, 140, y, page.width, h, focusRow == rowIndex, false, thumbs);
+                    if (focusRow == rowIndex) { span[0] = y; span[1] = y + h; }
+                    if (draw) option(c, k, o, 140, y, page.width, h, focusRow == rowIndex, false, thumbs);
                     y += h + 4;
                     rowIndex++;
                 }
                 y -= 4;
             }
             if (s.reason != null) {
-                TextPaint p = g.font(type.manrope(400), 26, 0, k.mute);
                 y += 16;
-                drawWrapped(c, p, s.reason, 140, y, page.width, 36);
+                if (draw) drawWrapped(c, g.font(type.manrope(400), 26, 0, k.mute), s.reason, 140, y, page.width, 36);
                 y += 72;
             }
         }
-        if (page.footnote != null) {
-            // Pages without a preview keep the right column for quiet notes such as credits.
-            TextPaint p = g.font(type.manrope(400), 24, 0, k.faint);
-            if (page.preview) drawWrapped(c, p, page.footnote, 140, Math.max(y + 40, 900), 640, 32);
-            else drawWrapped(c, p, page.footnote, 1300, page.top + 48, 480, 34);
-        }
-        hint(c, k, "OK", page.hint);
+        return y;
     }
 
     private void option(Canvas c, Ink k, Page.Opt o, float x, float y, float w, float h, boolean focus,
@@ -279,6 +309,8 @@ final class SheetPainter {
             tx += 104;
         }
         float maxName = x + w - tx - (o.forward ? 28 + 24 + 16 : 24) - (o.checked ? 46 : 0);
+        float full = p.measureText(o.label);
+        if (full > maxName) p.setTextSize(Math.max(28f, size * maxName / full));
         String name = g.ellipsize(o.label, maxName);
         c.drawText(name, tx, g.baseline(p, nameTop, 48), p);
         float nameW = p.measureText(name);
@@ -366,8 +398,13 @@ final class SheetPainter {
     static final float GRID_COL = 344, GRID_ROW = 240, GRID_TOP = 232, GRID_LEFT = 112, GRID_VIEW = 720;
 
     void allApps(Canvas c, Look look, Ink k, List<HomeItem> items, java.util.Set<String> onHome, int focus,
-                 boolean headFocus, float firstRow, String onHomeLabel) {
+                 boolean headFocus, float firstRow, String onHomeLabel, String emptyLabel) {
         boolean glass = look.glass();
+        if (items.isEmpty()) {
+            TextPaint p = g.font(type.manrope(500), 36, -.6f / 36, k.mute);
+            c.drawText(emptyLabel, 140, g.baseline(p, GRID_TOP + 40, 48), p);
+            return;
+        }
         int save = c.save();
         c.clipRect(GRID_LEFT - 24, GRID_TOP - 8, GRID_LEFT + 1696 + 24, GRID_TOP + GRID_VIEW);
         for (int i = 0; i < items.size(); i++) {
@@ -393,6 +430,8 @@ final class SheetPainter {
             marks.item(c, item, x + 100, y + 30, 120, 72, 58, Color2.fade(ink, markOpacity), true, mono);
             c.restoreToCount(ms);
             TextPaint p = g.font(type.manrope(500), 34, -.6f / 34, ink);
+            // Long names first step down to 30 px, only then are they shortened.
+            if (p.measureText(item.label) > 296) p.setTextSize(30);
             p.setTextAlign(Paint.Align.CENTER);
             c.drawText(g.ellipsize(item.label, 296), x + 160, g.baseline(p, y + 114, 44), p);
             p.setTextAlign(Paint.Align.LEFT);
@@ -408,7 +447,7 @@ final class SheetPainter {
         c.restoreToCount(save);
         int rows = (items.size() + GRID_COLS - 1) / GRID_COLS;
         if (firstRow > 0.01f) g.chevron(c, 940, 192, 40, 2, 1.8f, k.mute);
-        if (firstRow + 3 < rows - 0.01f) g.chevron(c, 940, 976, 40, 3, 1.8f, k.mute);
+        if (firstRow + 3 < rows - 0.01f) g.chevron(c, 1756, 964, 40, 3, 1.8f, k.mute);
     }
 
     // ------------------------------------------------------------------ Home editor
@@ -426,12 +465,15 @@ final class SheetPainter {
         label = g.font(type.manrope(600), 30, -.2f / 30, k.faint);
         c.drawText(offLabel, 1068, g.baseline(label, 216, 40), label);
 
+        TextPaint rb = g.font(type.manrope(500), 30, -.3f / 30, k.mute);
+        float removeW = Math.max(304, (float) Math.ceil(rb.measureText(removeLabel)) + 48);
         for (int i = 0; i < left.size(); i++) {
             float y = 264 + i * ED_PITCH;
             boolean active = (zone == StageView.ED_LEFT || zone == StageView.ED_REMOVE) && i == leftIndex;
             boolean nameFocus = zone == StageView.ED_LEFT && i == leftIndex;
-            float nameW = active && !lifted ? 880 - 8 - 304 : 880;
+            float nameW = active && !lifted ? 880 - 8 - removeW : 880;
             if (nameFocus) sheetPlate(c, k, 112, y, nameW, 72, 24, lifted);
+            else if (active && !lifted) g.round(c, 112, y, nameW, 72, 24, k.line); // the row the button acts on
             TextPaint num = g.font(type.manrope(500), 28, 0, nameFocus ? k.ink : k.mute);
             num.setTextAlign(Paint.Align.RIGHT);
             c.drawText(String.valueOf(i + 1), 112 + 16 + 36, g.baseline(num, y + 18, 36), num);
@@ -448,10 +490,10 @@ final class SheetPainter {
             if (active && !lifted) {
                 boolean f = zone == StageView.ED_REMOVE;
                 float bx = 112 + nameW + 8;
-                if (f) g.round(c, bx, y, 304, 72, 24, k.solid);
+                if (f) g.round(c, bx, y, removeW, 72, 24, k.solid);
                 TextPaint b = g.font(type.manrope(500), 30, -.3f / 30, f ? k.solidInk : k.mute);
                 b.setTextAlign(Paint.Align.CENTER);
-                c.drawText(removeLabel, bx + 152, g.baseline(b, y + 16, 40), b);
+                c.drawText(removeLabel, bx + removeW / 2, g.baseline(b, y + 16, 40), b);
                 b.setTextAlign(Paint.Align.LEFT);
             }
         }

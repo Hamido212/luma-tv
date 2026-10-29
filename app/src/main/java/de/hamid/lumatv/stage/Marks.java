@@ -90,6 +90,14 @@ final class Marks {
         return label != null ? label : fallback;
     }
 
+    /**
+     * The TV's own settings app. Its label is "Settings" like Luma's own Settings control, so
+     * All apps names it "TV settings" instead.
+     */
+    static boolean isTvSettings(String pkg) {
+        return "com.android.tv.settings".equals(pkg) || "com.android.settings".equals(pkg);
+    }
+
     private final Context context;
     private final Map<String, Drawable> drawables = new HashMap<>();
     private final Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);

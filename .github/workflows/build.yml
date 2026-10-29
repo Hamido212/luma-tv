@@ -1,5 +1,6 @@
-# Baut beide APK-Varianten (Debug) bei jedem Push auf main und bei jedem Pull Request.
-# Übernommen aus dem Fork Horizon Home von danilll0001 (MIT), auf main und Pull Requests beschränkt.
+# Builds both APK variants, runs the tests (including 1920x1080 screenshots in en/de/ru) and
+# checks Luma's principles: no internet permission, no runtime libraries.
+# Workflow originally contributed by danilll0001 (Horizon Home fork, MIT).
 name: Build APK
 on:
   push:
@@ -18,9 +19,42 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: true
+      - uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('app/build.gradle') }}
       - run: chmod +x gradlew
       - run: ./gradlew :app:assembleHomeDebug :app:assemblePreviewDebug
+      - name: Tests and screenshots
+        run: ./gradlew :app:testHomeDebugUnitTest
+      - name: Lint (report only)
+        run: ./gradlew :app:lintHomeDebug
+      - name: Principles
+        run: |
+          AAPT2="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt2"
+          for apk in app/build/outputs/apk/*/debug/*.apk; do
+            if "$AAPT2" dump permissions "$apk" | grep -q 'android.permission.INTERNET'; then
+              echo "::error::INTERNET permission in $apk"; exit 1
+            fi
+          done
+          if ./gradlew -q :app:dependencies --configuration homeReleaseRuntimeClasspath | grep -q -- '--- '; then
+            echo "::error::runtime dependency found"; exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: luma-tv-debug-apks
           path: app/build/outputs/apk/**/*.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: luma-tv-screenshots
+          path: app/build/screenshots/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: luma-tv-reports
+          path: |
+            app/build/reports/tests/
+            app/build/reports/lint-results-*.*

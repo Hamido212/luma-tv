@@ -22,6 +22,10 @@ final class HomePainter {
     static final int UTIL_APPS = 0, UTIL_SETTINGS = 1;
 
     static final float PH_TOP = 220, PH_PITCH = 128;
+    /** Widest dock shelf on the stage (CleanFrame's broad dock). */
+    static final float SHELF_MAX = 1696;
+    /** Bottom edge of the list clip. */
+    static final float LIST_BOTTOM = 1016;
 
     /** Everything one frame of Home needs. Animated values are already resolved. */
     static final class Frame {
@@ -75,12 +79,17 @@ final class HomePainter {
         if (Look.SHOW_TEXT.equals(apps)) { geom.tw = 288; geom.th = 104; geom.pitch = 296; }
         else if (Look.SHOW_ICONS.equals(apps)) { geom.tw = 176; geom.th = 144; geom.pitch = 184; }
         else { geom.tw = 288; geom.th = 200; geom.pitch = 296; }
-        geom.vis = Math.max(1, Math.min(5, n));
-        geom.shelf = geom.vis * geom.pitch - 8;
+        // The shelf holds at most 1696 px. When a whole row would overflow by less than 12 px
+        // per tile (six apps with names), the tiles tighten instead of clipping the last one.
+        if (n > 0 && n * geom.pitch - 8 > SHELF_MAX && (SHELF_MAX + 8) / n >= geom.pitch - 12) {
+            geom.pitch = (float) Math.floor((SHELF_MAX + 8) / n);
+            geom.tw = geom.pitch - 8;
+        }
+        float content = Math.max(1, n) * geom.pitch - 8;
+        geom.vis = Math.max(1, Math.min(n, (int) Math.floor((SHELF_MAX + 8) / geom.pitch)));
+        geom.broad = content > SHELF_MAX + .5f;
+        geom.shelf = n <= 0 ? 880 : Math.min(content, SHELF_MAX);
         geom.w = geom.shelf + 32;
-        geom.broad = n > 5;
-        if (n <= 0) { geom.w = 912; geom.shelf = 880; }
-        else if (geom.broad) { geom.w = 1728; geom.shelf = 1696; }
         geom.x = Math.round((1920 - geom.w) / 2);
         geom.y = 908 - geom.th - 32;
         geom.h = geom.th + 32;
@@ -98,8 +107,14 @@ final class HomePainter {
 
     /** List scroll target in rows: focus stays within the second to fourth slot. */
     static int listFirst(int n, int anchor, int current) {
+        if (listFits(n)) return 0;
         int first = clampInt(current, anchor - 3, anchor - 1);
         return clampInt(first, 0, Math.max(0, n - 5));
+    }
+
+    /** Up to six rows fit the list area completely: no scrolling and no fade. */
+    static boolean listFits(int n) {
+        return PH_TOP + n * PH_PITCH <= LIST_BOTTOM;
     }
 
     // ------------------------------------------------------------------ colours
@@ -121,7 +136,7 @@ final class HomePainter {
      * one textured quad. Returns null when composition is unavailable.
      */
     Bitmap composeBackdrop(Scene scene, Look look) {
-        if (scene == null) return null;
+        if (scene == null || !Scene.hardware) return null;
         Picture picture = new Picture();
         Canvas c = picture.beginRecording(Scene.STAGE_W, Scene.STAGE_H);
         drawBackdrop(c, scene, look);
@@ -270,7 +285,9 @@ final class HomePainter {
             return;
         }
         if (selected) {
-            g.round(c, l, t, w, h, radius, Color2.rgba(255, 255, 255, .11f * opacity));
+            // Remembered position while focus is on the controls: a faint hint, clearly
+            // quieter than the real focus plate (CleanFrame used .11, which read brighter).
+            g.round(c, l, t, w, h, radius, Color2.rgba(255, 255, 255, .05f * opacity));
             return;
         }
         boolean quiet = f.scene != null && f.scene.wall.dockQuiet;
@@ -325,13 +342,14 @@ final class HomePainter {
             float left = shelfL + i * geom.pitch - off;
             if (left + geom.tw < shelfL - 1 || left > shelfR + 1) continue;
             boolean focus = tilesFocus && i == f.anchor, sel = selected && i == f.anchor;
+            float near = tilesFocus ? Math.max(0f, 1f - Math.abs(f.plate - i)) : 0f;
             // CleanFrame masks the shelf edges (to 20 % over 132 px). Fading each tile by its
             // centre avoids an offscreen layer on every frame.
             float edge = 1f;
             float center = left + geom.tw / 2;
             if (fadeL && center < shelfL + 132) edge = Math.min(edge, .2f + .8f * clamp((center - shelfL) / 132f, 0, 1));
             if (fadeR && center > shelfR - 132) edge = Math.min(edge, .2f + .8f * clamp((shelfR - center) / 132f, 0, 1));
-            drawTile(c, f, items.get(i), left, geom.y + 16, geom, focus, sel, ink, edge);
+            drawTile(c, f, items.get(i), left, geom.y + 16, geom, focus, sel, ink, edge, near);
         }
         c.restoreToCount(save);
         // Icons-only: the focused app's name appears under the dock.
@@ -347,13 +365,13 @@ final class HomePainter {
     }
 
     private void drawTile(Canvas c, Frame f, HomeItem item, float left, float top, Geom geom,
-                          boolean focus, boolean sel, int ink, float edge) {
+                          boolean focus, boolean sel, int ink, float edge, float near) {
         boolean glass = f.look.glass();
         String apps = f.look.apps;
         float opacity;
         float scale = 1f;
         if (glass) {
-            opacity = focus ? 1f : sel ? .94f : .84f;
+            opacity = .84f + .16f * near;
         } else {
             boolean photo = f.look.photo();
             opacity = focus ? 1f : sel ? (photo ? .92f : .78f) : (photo ? .84f : .62f);
@@ -365,8 +383,9 @@ final class HomePainter {
         int color = Color2.fade(ink, opacity);
         if (!Look.SHOW_TEXT.equals(apps)) {
             float bx, by, bw, bh, size;
-            if (Look.SHOW_ICONS.equals(apps)) { bx = 20; by = 28; bw = 136; bh = 88; size = 72; }
-            else { bx = 84; by = 34; bw = 120; bh = 72; size = 58; }
+            if (Look.SHOW_ICONS.equals(apps)) { by = 28; bw = 136; bh = 88; size = 72; }
+            else { by = 34; bw = 120; bh = 72; size = 58; }
+            bx = (geom.tw - bw) / 2;
             int ms = c.save();
             if (glass && focus) c.scale(1.04f, 1.04f, left + bx + bw / 2, top + by + bh / 2 - 3);
             if (glass && focus) c.translate(0, -3);
@@ -377,12 +396,12 @@ final class HomePainter {
             boolean text = Look.SHOW_TEXT.equals(apps);
             float size = text ? 40 : 36;
             TextPaint p = homeText(f, Type.PRIMARY, size, text ? -.8f / 40 : -.8f / 36, color);
-            if (text ? p.measureText(item.label) > 264 : p.measureText(item.label) > 280) {
+            if (text) p.setTypeface(type.home(f.look.font, Type.DISPLAY));
+            float pad = text ? 12 : 4;
+            if (p.measureText(item.label) > geom.tw - 2 * pad) {
                 size = text ? 34 : 32;
                 p.setTextSize(size);
             }
-            if (text) p.setTypeface(type.home(f.look.font, Type.DISPLAY));
-            float pad = text ? 12 : 4;
             String label = g.ellipsize(item.label, geom.tw - 2 * pad);
             p.setTextAlign(Paint.Align.CENTER);
             shadowed(f, p, false);
@@ -425,7 +444,7 @@ final class HomePainter {
             float t = f.plate - a;
             float width = listPlateWidth(f, items.get(a)) * (1 - t) + listPlateWidth(f, items.get(b)) * t;
             float y = PH_TOP + 1 + f.plate * PH_PITCH - f.off;
-            float opacity = f.zone == Z_PREVIEW || f.zone == Z_UTIL ? .5f : 1f;
+            float opacity = f.zone == Z_UTIL ? .25f : f.zone == Z_PREVIEW ? .5f : 1f;
             if (f.look.photo() && f.scene != null && f.look.materialApplies()) {
                 int save = opacity < 1 ? c.saveLayerAlpha(112, y, 112 + width, y + 134, Math.round(opacity * 255)) : c.save();
                 material(c, f, 112, y, width, 134, 38, false);
@@ -434,13 +453,14 @@ final class HomePainter {
                 plate(c, f, 112, y, width, 134, 38, opacity, false);
             }
         }
+        boolean fits = listFits(n);
         int save = c.save();
-        c.clipRect(112, 72, 1312, 1016);
+        c.clipRect(112, 72, 1312, LIST_BOTTOM);
         for (int i = 0; i < n; i++) {
             float y = PH_TOP + i * PH_PITCH - f.off;
-            if (y + PH_PITCH < 72 || y > 1016) continue;
+            if (y + PH_PITCH < 72 || y > LIST_BOTTOM) continue;
             boolean focus = rowFocus && i == f.anchor, sel = remembered && i == f.anchor;
-            drawRow(c, f, items.get(i), y, focus, sel, ink, listFade(y + 64));
+            drawRow(c, f, items.get(i), y, focus, sel, ink, fits ? 1f : listFade(y + 64));
         }
         c.restoreToCount(save);
     }
@@ -498,6 +518,7 @@ final class HomePainter {
         if (!f.look.photo()) ink = Color2.fade(Look.BG_LIGHT.equals(f.look.bg) ? 0xFF1D1A16 : 0xFFF6F1E7, .72f);
         else ink = region != null ? region.ink : 0xFFF6F1E7;
         TextPaint p = homeText(f, Type.CLOCK, 48, -1.5f / 48, ink);
+        p.setFontFeatureSettings("'tnum'");
         if (photo) {
             if (region != null && region.pol == Walls.POL_DARK) g.shadow(2, 1, Color2.rgba(255, 248, 236, .24f));
             else g.shadow(3, 1, Color2.rgba(0, 0, 0, .22f));
@@ -510,6 +531,7 @@ final class HomePainter {
             p.setTextAlign(Paint.Align.LEFT);
         }
         p.clearShadowLayer();
+        p.setFontFeatureSettings(null);
 
         // Optional greeting: a smaller line under the clock, same ink and shadow as the clock.
         if (f.greeting != null && !f.greeting.isEmpty()) {
@@ -576,8 +598,10 @@ final class HomePainter {
             if (focus && !f.look.glass()) c.scale(1.05f, 1.05f, dock ? x + utilW[i] / 2 : x + utilW[i], y + 32);
             p.setColor(color);
             if (photo) {
+                // CleanFrame layers 0 1px 2px .40 over 0 2px 8px .24; one slightly wider shadow
+                // gives the controls the same lift over bright skies.
                 if (region.pol == Walls.POL_DARK) g.shadow(2, 1, Color2.rgba(255, 248, 236, .24f));
-                else g.shadow(2, 1, Color2.rgba(14, 10, 6, .40f));
+                else g.shadow(4, 1, Color2.rgba(14, 10, 6, .44f));
             }
             String glyph = i == UTIL_SETTINGS ? "settings" : "apps";
             float iconSize = icons ? 36 : dock ? (i == UTIL_SETTINGS ? 34 : 32) : (i == UTIL_SETTINGS ? 34 : 36);

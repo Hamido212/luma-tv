@@ -147,6 +147,7 @@ final class Gfx {
         text.setColor(color);
         text.setTextAlign(Paint.Align.LEFT);
         text.clearShadowLayer();
+        text.setFontFeatureSettings(null);
         return text;
     }
 

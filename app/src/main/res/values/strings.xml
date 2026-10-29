@@ -4,7 +4,7 @@
     <string name="greeting_morning">Good morning</string>
     <string name="greeting_day">Good afternoon</string>
     <string name="greeting_evening">Good evening</string>
-    <string name="greeting_night">Good night</string>
+    <string name="greeting_night">Good evening</string>
     <string name="empty_home">No launchable apps found.</string>
 
     <string name="shortcut_inputs">Inputs</string>
@@ -175,4 +175,20 @@
         <item quantity="one">%d app</item>
         <item quantity="other">%d apps</item>
     </plurals>
+    <string name="greeting_with_name" translatable="false">%1$s, %2$s</string>
+    <string name="safe_mode">Luma started in safe mode without a photo. Choose a background in Settings to end it.</string>
+    <string name="tv_settings_app">TV settings</string>
+    <string name="st_backup">Back up &amp; restore</string>
+    <string name="st_backup_none">No backup yet</string>
+    <string name="st_backup_last">Last backup: %1$s</string>
+    <string name="st_backup_now">Back up now</string>
+    <string name="st_restore">Restore</string>
+    <string name="st_restore_desc">Replaces the current settings with the backup</string>
+    <string name="st_backup_note">The backup is stored on the TV at %1$s. Before a factory reset or reinstall, copy it off with adb pull and put it back with adb push.</string>
+    <string name="st_backup_done">Settings backed up</string>
+    <string name="st_backup_failed">Backup failed. Nothing was changed.</string>
+    <string name="st_restore_done">Settings restored</string>
+    <string name="st_restore_failed">No valid backup found. Nothing was changed.</string>
+    <string name="a11y_position">%1$s, %2$d of %3$d</string>
+    <string name="a11y_selected">selected</string>
 </resources>

@@ -3,7 +3,7 @@
     <string name="greeting_morning">Guten Morgen</string>
     <string name="greeting_day">Guten Tag</string>
     <string name="greeting_evening">Guten Abend</string>
-    <string name="greeting_night">Gute Nacht</string>
+    <string name="greeting_night">Guten Abend</string>
     <string name="empty_home">Keine startbaren Apps gefunden.</string>
 
     <string name="shortcut_inputs">Eingänge</string>
@@ -174,4 +174,19 @@
         <item quantity="one">%d App</item>
         <item quantity="other">%d Apps</item>
     </plurals>
+    <string name="safe_mode">Luma ist im sicheren Modus ohne Foto gestartet. Ein neuer Hintergrund in den Einstellungen beendet ihn.</string>
+    <string name="tv_settings_app">TV-Einstellungen</string>
+    <string name="st_backup">Sichern &amp; Wiederherstellen</string>
+    <string name="st_backup_none">Noch keine Sicherung</string>
+    <string name="st_backup_last">Letzte Sicherung: %1$s</string>
+    <string name="st_backup_now">Jetzt sichern</string>
+    <string name="st_restore">Wiederherstellen</string>
+    <string name="st_restore_desc">Ersetzt die aktuellen Einstellungen durch die Sicherung</string>
+    <string name="st_backup_note">Die Sicherung liegt auf dem Fernseher unter %1$s. Vor einem Werksreset oder einer Neuinstallation mit adb pull kopieren und danach mit adb push zurücklegen.</string>
+    <string name="st_backup_done">Einstellungen gesichert</string>
+    <string name="st_backup_failed">Sichern fehlgeschlagen. Es wurde nichts geändert.</string>
+    <string name="st_restore_done">Einstellungen wiederhergestellt</string>
+    <string name="st_restore_failed">Keine gültige Sicherung gefunden. Es wurde nichts geändert.</string>
+    <string name="a11y_position">%1$s, %2$d von %3$d</string>
+    <string name="a11y_selected">ausgewählt</string>
 </resources>

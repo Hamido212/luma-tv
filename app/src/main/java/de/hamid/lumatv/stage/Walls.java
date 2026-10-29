@@ -62,7 +62,7 @@ final class Walls {
         String thumbAsset() { return asset == null ? null : asset.replace(".jpg", "-thumb.jpg"); }
     }
 
-    private static Region light(int ink) { return new Region(POL_LIGHT, ink, .66f, .46f); }
+    private static Region light(int ink) { return new Region(POL_LIGHT, ink, .74f, .56f); }
     private static Region mistTr(int ink) { return new Region(POL_MIST, ink, .90f, .74f); }
     private static Region mistBr(int ink) { return new Region(POL_MIST, ink, .88f, .74f); }
     private static Region dark(int ink) { return new Region(POL_DARK, ink, 1f, 1f); }
