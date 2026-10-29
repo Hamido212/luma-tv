@@ -48,7 +48,6 @@ final class HomeItem {
             item.listLabel = item.label + " · " + own.trim();
         }
     }
-    }
 
     /** One or two initials, like CleanFrame's monogram. */
     String initials() {
