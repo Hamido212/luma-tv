@@ -64,6 +64,8 @@ final class Page {
     float width = 640;
     String hint;
     String footnote;
+    /** Draws the footnote under the choices instead of in the right column. */
+    boolean footnoteBelow;
 
     Page(int id, String back, String title, boolean preview) {
         this.id = id;

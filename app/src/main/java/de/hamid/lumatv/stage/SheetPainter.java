@@ -197,42 +197,61 @@ final class SheetPainter {
 
     /** Lowest y a settings page may use; the hint line starts at 968. */
     static final float PAGE_BOTTOM = 944;
+    private final float[] pageTops = new float[64];
+    private int pageTopCount;
+    private boolean pageCut;
 
     void page(Canvas c, Ink k, Page page, int focusRow, int focusCol, Map<String, Bitmap> thumbs) {
         backButton(c, k, page.back, focusRow == -1);
         title(c, k, page.title, 132, 68);
-        // Long pages (many HDMI inputs, Russian descriptions) scroll so the focused row stays in view.
+        // Long pages (many HDMI inputs, long translations) scroll by whole rows so the focused
+        // row stays in view; rows that do not fit completely are not drawn.
         float[] span = {-1, -1};
-        float end = sections(c, k, page, focusRow, focusCol, thumbs, false, span);
+        float end = sections(c, k, page, focusRow, focusCol, thumbs, false, span, -1e9f, 1e9f);
         float scroll = 0;
-        if (end > PAGE_BOTTOM && span[1] > PAGE_BOTTOM - 24) {
-            scroll = Math.min(end - PAGE_BOTTOM, span[1] - (PAGE_BOTTOM - 24));
+        if (end > PAGE_BOTTOM && span[1] > PAGE_BOTTOM) {
+            float needed = span[1] - PAGE_BOTTOM;
+            scroll = needed;
+            for (int i = 0; i < pageTopCount; i++) {
+                float b = pageTops[i] - page.top;
+                if (b >= needed) { scroll = b; break; }
+            }
         }
+        boolean scrolling = end > PAGE_BOTTOM;
         int save = c.save();
-        if (end > PAGE_BOTTOM) c.clipRect(0, page.top - 8, 1920, PAGE_BOTTOM + 8);
         c.translate(0, -scroll);
-        end = sections(c, k, page, focusRow, focusCol, thumbs, true, span);
+        pageCut = false;
+        end = sections(c, k, page, focusRow, focusCol, thumbs, true, span,
+                scrolling ? page.top + scroll : -1e9f, scrolling ? PAGE_BOTTOM + scroll : 1e9f);
         c.restoreToCount(save);
-        if (scroll > 0.5f) g.chevron(c, 140 + page.width / 2 - 16, page.top - 40, 32, 2, 1.8f, k.mute);
-        if (end - scroll > PAGE_BOTTOM + 0.5f) g.chevron(c, 140 + page.width / 2 - 16, PAGE_BOTTOM - 4, 32, 3, 1.8f, k.mute);
+        float mid = 140 + page.width / 2 - 16;
+        if (scroll > 0.5f) g.chevron(c, mid, page.top - 36, 32, 2, 1.8f, k.mute);
+        if (pageCut) g.chevron(c, mid, PAGE_BOTTOM - 8, 32, 3, 1.8f, k.mute);
         if (page.footnote != null) {
-            // Pages without a preview keep the right column for quiet notes such as credits.
             TextPaint p = g.font(type.manrope(400), 24, 0, k.faint);
-            if (page.preview) drawWrapped(c, p, page.footnote, 140, Math.min(Math.max(end - scroll + 40, 900), PAGE_BOTTOM - 40), 640, 32);
+            if (page.footnoteBelow) drawWrapped(c, p, page.footnote, 140, Math.min(end - scroll + 40, PAGE_BOTTOM - 72), page.width, 34);
+            else if (page.preview) drawWrapped(c, p, page.footnote, 140, Math.min(Math.max(end - scroll + 40, 900), PAGE_BOTTOM - 40), 640, 32);
+            // Pages without a preview keep the right column for quiet notes such as credits.
             else drawWrapped(c, p, page.footnote, 1300, page.top + 48, 480, 34);
         }
         hint(c, k, "OK", page.hint);
     }
 
-    /** Lays out (and with draw, paints) the sections. Returns the bottom; span gets the focused row. */
+    /**
+     * Lays out (and with draw, paints) the sections. Returns the bottom; span gets the focused
+     * row; pageTops collects where rows and labels start. Only items fully inside [winTop, winBottom]
+     * are painted.
+     */
     private float sections(Canvas c, Ink k, Page page, int focusRow, int focusCol, Map<String, Bitmap> thumbs,
-                           boolean draw, float[] span) {
+                           boolean draw, float[] span, float winTop, float winBottom) {
         float y = page.top;
         int rowIndex = 0;
+        if (!draw) pageTopCount = 0;
         for (Page.Section s : page.sections) {
             if (s != page.sections.get(0)) y += page.sectionGap;
             if (s.label != null) {
-                if (draw) {
+                mark(draw, y);
+                if (draw && visible(y, y + 36, winTop, winBottom)) {
                     TextPaint p = g.font(type.manrope(500), 28, -.2f / 28, k.mute);
                     c.drawText(s.label, 140, g.baseline(p, y, 36), p);
                 }
@@ -241,8 +260,9 @@ final class SheetPainter {
             if (s.horizontal) {
                 int n = s.opts.size();
                 float w = (page.width - 12 * (n - 1)) / n;
+                if (s.label == null) mark(draw, y);
                 if (focusRow == rowIndex) { span[0] = y; span[1] = y + 92; }
-                if (draw) {
+                if (draw && visible(y, y + 92, winTop, winBottom)) {
                     for (int i = 0; i < n; i++) {
                         boolean f = focusRow == rowIndex && focusCol == i;
                         option(c, k, s.opts.get(i), 140 + i * (w + 12), y, w, 92, f, true, thumbs);
@@ -254,8 +274,11 @@ final class SheetPainter {
                 for (int i = 0; i < s.opts.size(); i++) {
                     Page.Opt o = s.opts.get(i);
                     float h = o.description != null ? page.descHeight : page.rowHeight;
+                    if (i > 0 || s.label == null) mark(draw, y);
                     if (focusRow == rowIndex) { span[0] = y; span[1] = y + h; }
-                    if (draw) option(c, k, o, 140, y, page.width, h, focusRow == rowIndex, false, thumbs);
+                    if (draw && visible(y, y + h, winTop, winBottom)) {
+                        option(c, k, o, 140, y, page.width, h, focusRow == rowIndex, false, thumbs);
+                    }
                     y += h + 4;
                     rowIndex++;
                 }
@@ -263,11 +286,23 @@ final class SheetPainter {
             }
             if (s.reason != null) {
                 y += 16;
-                if (draw) drawWrapped(c, g.font(type.manrope(400), 26, 0, k.mute), s.reason, 140, y, page.width, 36);
+                if (draw && visible(y, y + 72, winTop, winBottom)) {
+                    drawWrapped(c, g.font(type.manrope(400), 26, 0, k.mute), s.reason, 140, y, page.width, 36);
+                }
                 y += 72;
             }
         }
         return y;
+    }
+
+    private void mark(boolean draw, float y) {
+        if (!draw && pageTopCount < pageTops.length) pageTops[pageTopCount++] = y;
+    }
+
+    private boolean visible(float top, float bottom, float winTop, float winBottom) {
+        if (top >= winTop - .5f && bottom <= winBottom + .5f) return true;
+        if (top >= winTop - .5f) pageCut = true;
+        return false;
     }
 
     private void option(Canvas c, Ink k, Page.Opt o, float x, float y, float w, float h, boolean focus,

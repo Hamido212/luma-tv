@@ -157,7 +157,9 @@ public final class StageView extends View {
      */
     public void begin(boolean freshStart) {
         if (freshStart) advanceOnOpen();
-        if (look.photo()) loadScene(look.wallpaper, null);
+        // Also for a flat background, so switching to Photo later shows the picture at once.
+        // Safe mode skips it: the photo is the likeliest reason for the crashes.
+        if (!look.safeMode()) loadScene(look.wallpaper, null);
     }
 
     // ------------------------------------------------------------------ public API
@@ -342,7 +344,11 @@ public final class StageView extends View {
         host.work(() -> {
             Scene loaded = Scene.load(context, wall, false);
             post(() -> {
-                if (loaded == null || !wall.id.equals(look.wallpaper)) return;
+                if (loaded == null) {
+                    if (wall.id.equals(loadingWall)) loadingWall = null;
+                    return;
+                }
+                if (!wall.id.equals(look.wallpaper)) return;
                 if (scene == null && look.motion) { sceneIn.jump(0); sceneIn.to(1, 240); }
                 scene = loaded;
                 loadingWall = null;
@@ -817,6 +823,7 @@ public final class StageView extends View {
                 Page.Opt restore = sec.add(new Page.Opt(s(R.string.st_restore), host::restoreSettings));
                 restore.description = s(R.string.st_restore_desc);
                 restore.enabled = last != null;
+                p.footnoteBelow = true;
                 p.footnote = s(R.string.st_backup_note, "Android/data/" + getContext().getPackageName() + "/files/" + de.hamid.lumatv.data.SettingsBackup.FILE_NAME);
                 p.hint = s(R.string.st_hint_select);
                 break;
@@ -839,7 +846,10 @@ public final class StageView extends View {
             backdropKey = null;
             syncHomeScroll(false);
         }
-        if ("bg".equals(key)) restartRotation();
+        if ("bg".equals(key)) {
+            restartRotation();
+            if (look.photo() && scene == null && loadingWall == null) loadScene(look.wallpaper, null);
+        }
         refreshPage();
         return true;
     }
